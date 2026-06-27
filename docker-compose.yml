@@ -1,0 +1,45 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: payment_reconciliation
+    # No host port binding — society_postgres already uses host:5432.
+    # API container reaches this via service name "db:5432" inside the compose network.
+    # Use "make shell-db" for a psql prompt.
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    # Override Dockerfile CMD: only watch app/ so .venv pip installs don't trigger infinite restarts
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir app
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:password@db:5432/payment_reconciliation
+      SERVICE_BASE_URL: https://pay.gm-global-techies-town.club
+      CORS_ORIGINS: "https://gm-global-techies-town.club,https://www.gm-global-techies-town.club,https://pay.gm-global-techies-town.club,http://localhost:3000,http://localhost:5173,http://localhost:8080"
+      # Ollama runs natively on the host — reach it via host-gateway
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: admin123
+    extra_hosts:
+      # Maps host.docker.internal → host machine IP (Linux rootless Docker)
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - .:/app
+
+volumes:
+  pg_data:

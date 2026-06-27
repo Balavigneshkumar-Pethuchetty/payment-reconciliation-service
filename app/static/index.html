@@ -1,0 +1,2865 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Payment Reconciliation</title>
+
+<!-- Flatpickr — lightweight date/datetime picker (UMD, loaded before module script) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css">
+<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
+
+<!-- JSONForms: Vue 3 + ESM via esm.sh (no bundler needed) -->
+<script type="importmap">
+{
+  "imports": {
+    "vue":                    "https://esm.sh/vue@3.4.38",
+    "@jsonforms/core":        "https://esm.sh/@jsonforms/core@3.4.0?deps=vue@3.4.38",
+    "@jsonforms/vue":         "https://esm.sh/@jsonforms/vue@3.4.0?deps=vue@3.4.38,@jsonforms/core@3.4.0",
+    "@jsonforms/vue-vanilla": "https://esm.sh/@jsonforms/vue-vanilla@3.4.0?deps=vue@3.4.38,@jsonforms/core@3.4.0,@jsonforms/vue@3.4.0"
+  }
+}
+</script>
+
+<style>
+/* ── Base ───────────────────────────────────────────────────── */
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'SF Mono','Fira Code','Cascadia Code',monospace;background:#0d1117;color:#e6edf3;font-size:13px;height:100vh;display:flex;overflow:hidden}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-track{background:#161b22;border-radius:4px}
+::-webkit-scrollbar-thumb{background:#484f58;border-radius:4px;border:2px solid #161b22}
+::-webkit-scrollbar-thumb:hover{background:#6e7681}
+*{scrollbar-width:thin;scrollbar-color:#484f58 #161b22}
+
+/* ── Sidebar ────────────────────────────────────────────────── */
+.sidebar{width:300px;min-width:300px;background:#161b22;border-right:1px solid #30363d;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-header{padding:14px 16px;border-bottom:1px solid #30363d;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.sidebar-header h1{font-size:13px;font-weight:600}
+.badge{font-size:10px;padding:2px 7px;border-radius:12px;background:#21262d;color:#58a6ff;border:1px solid #30363d}
+.badge-jf{background:#1a2e1a;color:#3fb950;border-color:#2d5a27}
+.sidebar-body{flex:1;overflow-y:auto;padding:12px}
+
+/* ── Form base ──────────────────────────────────────────────── */
+.section-title{font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:.08em;margin:14px 0 6px;font-weight:600}
+label{display:block;font-size:11px;color:#8b949e;margin-bottom:3px}
+input,select,textarea{width:100%;background:#0d1117;border:1px solid #30363d;color:#e6edf3;padding:6px 8px;border-radius:6px;font-family:inherit;font-size:12px;outline:none;transition:border-color .15s}
+input:focus,select:focus,textarea:focus{border-color:#58a6ff}
+textarea{resize:vertical}
+.field{margin-bottom:8px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+/* ── Buttons ────────────────────────────────────────────────── */
+.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 14px;border:none;border-radius:6px;font-family:inherit;font-size:12px;font-weight:500;cursor:pointer;transition:all .15s}
+.btn-primary{background:#238636;color:#fff}.btn-primary:hover{background:#2ea043}
+.btn-secondary{background:#21262d;color:#e6edf3;border:1px solid #30363d}.btn-secondary:hover{background:#30363d}
+.btn-danger{background:#b91c1c;color:#fff}.btn-danger:hover{background:#dc2626}
+.btn-blue{background:#1f6feb;color:#fff}.btn-blue:hover{background:#388bfd}
+.btn-purple{background:#6e40c9;color:#fff}.btn-purple:hover{background:#8957e5}
+.btn-sm{padding:4px 10px;font-size:11px}
+.btn-row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center}
+
+/* ── Auth card ──────────────────────────────────────────────── */
+.user-card{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;margin-top:6px;font-size:11px;line-height:1.8}
+.u-name{color:#58a6ff;font-weight:600}
+.role-chip{display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;margin-right:3px;background:#162032;color:#58a6ff;border:1px solid #1f3a5f}
+.role-chip.admin{background:#1a2e1a;color:#3fb950;border-color:#2d5a27}
+.expiry-ok{color:#3fb950}.expiry-warn{color:#d29922}.expiry-dead{color:#f85149}
+
+/* ── Main layout ────────────────────────────────────────────── */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.main-header{background:#161b22;border-bottom:1px solid #30363d;padding:0 20px;display:flex;align-items:center}
+.tabs{display:flex}
+.tab-btn{padding:12px 16px;background:none;border:none;border-bottom:2px solid transparent;color:#8b949e;font-family:inherit;font-size:12px;font-weight:500;cursor:pointer;transition:all .15s;white-space:nowrap}
+.tab-btn:hover{color:#e6edf3}
+.tab-btn.active{color:#58a6ff;border-bottom-color:#58a6ff}
+.sse-dot{width:7px;height:7px;border-radius:50%;background:#8b949e;display:inline-block;margin-left:6px;vertical-align:middle}
+.sse-dot.live{background:#3fb950;box-shadow:0 0 4px #3fb950}
+
+.tab-panel{display:none;flex:1;overflow-y:scroll;padding:20px;flex-direction:column;gap:14px;min-height:0}
+.tab-panel.active{display:flex}
+
+/* ── Cards ──────────────────────────────────────────────────── */
+.card{background:#161b22;border:1px solid #30363d;border-radius:8px}
+.card-head{padding:10px 14px;border-bottom:1px solid #30363d;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;border-radius:8px 8px 0 0;overflow:hidden}
+.card-head h3{font-size:12px;font-weight:600}
+.card-body{padding:14px}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+
+/* ── Method badges ──────────────────────────────────────────── */
+.method{font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px}
+.method-post{background:#163a1e;color:#3fb950;border:1px solid #2d5a27}
+.method-put{background:#2a1f00;color:#d29922;border:1px solid #5a3e00}
+.method-get{background:#1a2a3a;color:#58a6ff;border:1px solid #1f3a5f}
+#img-dropzone.dz-hover{border-color:#58a6ff;background:#0a1628}
+
+/* ── Status badges ──────────────────────────────────────────── */
+.sb{display:inline-block;padding:2px 9px;border-radius:10px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.s-PENDING{background:#2a1f00;color:#d29922;border:1px solid #5a3e00}
+.s-IN_PROGRESS{background:#162032;color:#58a6ff;border:1px solid #1f3a5f}
+.s-RECONCILED{background:#1a2e1a;color:#3fb950;border:1px solid #2d5a27}
+.s-FAILED{background:#2d1a1a;color:#f85149;border:1px solid #5a2020}
+.s-EXPIRED{background:#21262d;color:#8b949e;border:1px solid #30363d}
+
+/* ── Response boxes ─────────────────────────────────────────── */
+.resp-box{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;font-size:11px;line-height:1.6;overflow-x:auto;white-space:pre-wrap;word-break:break-all;max-height:240px;overflow-y:auto}
+.resp-meta{display:flex;align-items:center;gap:10px;margin-bottom:6px;font-size:11px}
+.http-ok{color:#3fb950;font-weight:600}.http-err{color:#f85149;font-weight:600}
+
+/* ── QR ─────────────────────────────────────────────────────── */
+.qr-wrap{text-align:center;padding:10px}
+.qr-wrap img{width:180px;height:180px;border:3px solid #30363d;border-radius:8px;image-rendering:pixelated}
+.qr-amount{font-size:20px;font-weight:700;color:#3fb950;margin-top:8px}
+.qr-info{font-size:11px;line-height:1.9;margin-top:4px}
+.countdown{font-size:11px;color:#d29922;margin-top:3px}
+.countdown.expired{color:#f85149}
+
+/* ── SSE feed ───────────────────────────────────────────────── */
+.sse-feed{background:#0d1117;border:1px solid #30363d;border-radius:6px;max-height:100px;overflow-y:auto;padding:7px 10px;font-size:11px}
+.sse-ev{padding:3px 0;border-bottom:1px solid #21262d;color:#8b949e}
+.sse-ev:last-child{border:none}
+.ev-type{color:#58a6ff}.ev-amt{color:#3fb950}
+
+/* ── History table ──────────────────────────────────────────── */
+.filter-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;padding:12px 14px;border-bottom:1px solid #30363d}
+.chip-group{display:flex;gap:4px;flex-wrap:wrap}
+.chip{padding:3px 10px;border-radius:12px;border:1px solid #30363d;background:#21262d;color:#8b949e;cursor:pointer;font-size:11px;font-family:inherit;transition:all .15s}
+.chip:hover{border-color:#58a6ff;color:#e6edf3}
+.chip.sel{border-color:#58a6ff;background:#162032;color:#58a6ff}
+.chip.sel-g{border-color:#3fb950;background:#1a2e1a;color:#3fb950}
+.chip.sel-r{border-color:#f85149;background:#2d1a1a;color:#f85149}
+.chip.sel-y{border-color:#d29922;background:#2a1f00;color:#d29922}
+.chip.sel-gr{border-color:#8b949e;background:#21262d;color:#8b949e}
+.txn-table{width:100%;border-collapse:collapse;font-size:11px}
+.txn-table th{padding:7px 10px;text-align:left;color:#8b949e;border-bottom:1px solid #30363d;font-weight:500;white-space:nowrap;background:#161b22}
+.txn-table td{padding:7px 10px;border-bottom:1px solid #21262d;vertical-align:middle}
+.txn-table tr:hover>td{background:#1c2128;cursor:pointer}
+.txn-id-link{color:#58a6ff;cursor:pointer}.txn-id-link:hover{text-decoration:underline}
+.exp-row{display:none}.exp-row.open{display:table-row}
+.exp-cell{padding:0!important;border-bottom:1px solid #30363d!important}
+.exp-inner{padding:12px 14px;background:#0d1117}
+.exp-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px}
+.kv-line{font-size:11px;line-height:2}
+.kv-k{color:#8b949e}.kv-v{color:#e6edf3}
+.pagination{display:flex;align-items:center;gap:8px;padding:10px 14px;font-size:11px;color:#8b949e}
+.page-info{flex:1;text-align:center}
+
+/* ── E2E steps ──────────────────────────────────────────────── */
+.step-bar{display:flex;align-items:center;margin-bottom:14px}
+.step-node{display:flex;flex-direction:column;align-items:center;gap:3px}
+.step-con{flex:1;height:2px;background:#30363d;margin-bottom:14px;transition:background .3s}
+.step-con.done{background:#3fb950}
+.step-circle{width:26px;height:26px;border-radius:50%;border:2px solid #30363d;background:#0d1117;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:#8b949e;transition:all .2s}
+.step-circle.active{border-color:#58a6ff;color:#58a6ff;background:#162032}
+.step-circle.done{border-color:#3fb950;color:#3fb950;background:#1a2e1a}
+.step-lbl{font-size:9px;color:#8b949e;text-align:center;white-space:nowrap}
+.step-card{border:1px solid #30363d;border-radius:8px;overflow:hidden;opacity:.5;transition:opacity .2s}
+.step-card.active{border-color:#58a6ff;opacity:1}
+.step-card.done{border-color:#3fb950;opacity:1}
+.step-head{padding:9px 12px;background:#161b22;display:flex;align-items:center;justify-content:space-between}
+.step-num{font-size:10px;color:#8b949e;margin-right:6px}
+
+/* ── Alerts ─────────────────────────────────────────────────── */
+.inline-alert{padding:7px 11px;border-radius:6px;font-size:11px;margin-top:8px}
+.a-ok{background:#1a2e1a;border:1px solid #2d5a27;color:#3fb950}
+.a-err{background:#2d1a1a;border:1px solid #5a2020;color:#f85149}
+.a-info{background:#162032;border:1px solid #1f3a5f;color:#58a6ff}
+.a-warn{background:#2a1f00;border:1px solid #5a3e00;color:#d29922}
+.hidden{display:none}
+
+/* ── Misc ───────────────────────────────────────────────────── */
+hr.div{border:none;border-top:1px solid #30363d;margin:10px 0}
+.muted{color:#8b949e}.tg{color:#3fb950}.tb{color:#58a6ff}
+details summary{cursor:pointer;font-size:11px;color:#8b949e;padding:4px 0;user-select:none}
+details summary:hover{color:#e6edf3}
+details[open] summary{color:#58a6ff}
+
+/* ── Schema editor ──────────────────────────────────────────── */
+.schema-editor-area{font-size:11px;font-family:inherit;min-height:320px;background:#0d1117;border:1px solid #30363d;color:#e6edf3;border-radius:6px;padding:8px;resize:vertical;line-height:1.6}
+.schema-editor-area:focus{border-color:#58a6ff}
+.jf-load-state{display:flex;align-items:center;gap:8px;font-size:11px;color:#8b949e;padding:8px 0}
+.jf-spinner{width:14px;height:14px;border:2px solid #30363d;border-top-color:#58a6ff;border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── JSONForms dark-theme override ──────────────────────────── */
+/* vue-vanilla renders semantic HTML; override all elements */
+#jf-root{padding:2px}
+#jf-root .control{margin-bottom:10px}
+#jf-root .control>label,
+#jf-root .control>.label-wrap>label{display:block;font-size:11px;color:#8b949e;margin-bottom:3px;font-weight:400}
+#jf-root input[type=text],
+#jf-root input[type=number],
+#jf-root input[type=email],
+#jf-root input[type=date],
+#jf-root input[type=password],
+#jf-root textarea,
+#jf-root select{width:100%;background:#0d1117;border:1px solid #30363d;color:#e6edf3;padding:6px 8px;border-radius:6px;font-family:inherit;font-size:12px;outline:none;transition:border-color .15s}
+#jf-root input:focus,
+#jf-root select:focus,
+#jf-root textarea:focus{border-color:#58a6ff}
+#jf-root input.invalid,
+#jf-root select.invalid,
+#jf-root textarea.invalid{border-color:#f85149!important}
+#jf-root input[type=checkbox]{width:auto;accent-color:#3fb950;margin-right:6px;cursor:pointer}
+#jf-root .description{font-size:10px;color:#8b949e;margin-top:2px}
+#jf-root .error-message,
+#jf-root .validation_warning{font-size:10px;color:#f85149;margin-top:2px}
+#jf-root .vertical-layout{display:flex;flex-direction:column;gap:0}
+#jf-root .vertical-layout>div{margin-bottom:10px}
+#jf-root .horizontal-layout{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:0}
+#jf-root .horizontal-layout-item{margin-bottom:0}
+#jf-root fieldset{border:1px solid #30363d;border-radius:6px;padding:10px;margin-bottom:10px}
+#jf-root legend{color:#8b949e;font-size:11px;padding:0 6px}
+#jf-root .array-list-item{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;margin-bottom:8px}
+#jf-root .add-button,.jf-root .delete-button{padding:4px 10px;border-radius:5px;border:1px solid #30363d;background:#21262d;color:#e6edf3;cursor:pointer;font-size:11px}
+
+/* payload preview */
+#payload-preview{font-size:10px;line-height:1.6;color:#8b949e}
+
+/* ── Flatpickr dark theme overrides ─────────────────────────── */
+.flatpickr-calendar{background:#161b22;border:1px solid #30363d;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.5);font-family:inherit;font-size:12px}
+.flatpickr-months{background:#0d1117;border-radius:8px 8px 0 0;padding:4px 0}
+.flatpickr-month{color:#e6edf3}
+.flatpickr-current-month input.cur-year,.flatpickr-current-month .flatpickr-monthDropdown-months{color:#e6edf3;background:transparent;font-family:inherit;font-size:12px}
+.flatpickr-monthDropdown-months option{background:#161b22}
+.flatpickr-weekday{color:#8b949e;font-size:10px}
+.flatpickr-day{color:#e6edf3;border-radius:4px}
+.flatpickr-day:hover{background:#21262d;border-color:#30363d}
+.flatpickr-day.selected,.flatpickr-day.selected:hover{background:#1f6feb;border-color:#1f6feb;color:#fff}
+.flatpickr-day.today{border-color:#3fb950;color:#3fb950}
+.flatpickr-day.today.selected{background:#3fb950;border-color:#3fb950;color:#0d1117}
+.flatpickr-day.flatpickr-disabled,.flatpickr-day.prevMonthDay,.flatpickr-day.nextMonthDay{color:#484f58}
+.flatpickr-time{background:#0d1117;border-top:1px solid #30363d;border-radius:0 0 8px 8px}
+.flatpickr-time input,.flatpickr-time .flatpickr-am-pm{color:#e6edf3;background:transparent;font-family:inherit}
+.flatpickr-time input:hover,.flatpickr-time .flatpickr-am-pm:hover{background:#21262d}
+.flatpickr-time .numInputWrapper span{border-color:#30363d}
+.flatpickr-time .numInputWrapper span:hover{background:#30363d}
+span.flatpickr-next-month svg,span.flatpickr-prev-month svg{fill:#8b949e}
+span.flatpickr-next-month:hover svg,span.flatpickr-prev-month:hover svg{fill:#e6edf3}
+/* altInput = the human-readable display field flatpickr creates */
+.flatpickr-input.flatpickr-input--altFormat{
+  width:100%;background:#0d1117;border:1px solid #30363d;color:#e6edf3;
+  padding:6px 28px 6px 8px;border-radius:6px;font-family:inherit;font-size:12px;
+  outline:none;cursor:pointer;transition:border-color .15s;
+}
+.flatpickr-input.flatpickr-input--altFormat:focus{border-color:#58a6ff}
+.flatpickr-input.flatpickr-input--altFormat.invalid{border-color:#f85149!important}
+.fp-wrap{position:relative}
+.fp-wrap .fp-clear{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:#484f58;cursor:pointer;font-size:13px;line-height:1;padding:0}
+.fp-wrap .fp-clear:hover{color:#f85149}
+#payload-preview .pl-k{color:#f85149}
+#payload-preview .pl-s{color:#3fb950}
+#payload-preview .pl-n{color:#d29922}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════ SIDEBAR ═══════════════════════════ -->
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <h1>Payment Reconciliation</h1>
+    <span class="badge">Dev Console</span>
+    <span class="badge badge-jf" id="jf-status-badge">JSONForms ⏳</span>
+  </div>
+  <div class="sidebar-body">
+    <div class="section-title">Keycloak Auth</div>
+    <div class="field"><label>Keycloak URL</label>
+      <input id="kc-url" value="https://auth.gm-global-techies-town.club">
+    </div>
+    <div class="row2">
+      <div class="field"><label>Realm</label><input id="kc-realm" value="society-events"></div>
+      <div class="field"><label>Client ID</label><input id="kc-client" value="society-frontend"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Username</label><input id="kc-user" value="bala.pethuchetty"></div>
+      <div class="field"><label>Password</label><input id="kc-pass" type="password"></div>
+    </div>
+    <div class="field"><label>Scope</label><input id="kc-scope" value="openid profile email roles"></div>
+    <div class="btn-row">
+      <button class="btn btn-primary btn-sm" onclick="doLogin()">Login</button>
+      <button class="btn btn-secondary btn-sm" onclick="doClear()">Clear</button>
+    </div>
+    <div id="user-info" class="hidden"></div>
+
+    <hr class="div">
+    <div class="section-title">Live Feed <span class="sse-dot" id="sse-dot"></span></div>
+    <div class="sse-feed" id="sidebar-feed"><span class="muted">Connecting…</span></div>
+  </div>
+</aside>
+
+<!-- ═══════════════════════ MAIN ═══════════════════════════════ -->
+<div class="main">
+  <div class="main-header">
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="pay">▶ Create &amp; Pay</button>
+      <button class="tab-btn" data-tab="email">✉ Email Reconcile</button>
+      <button class="tab-btn" data-tab="e2e">⚡ E2E Test</button>
+      <button class="tab-btn" data-tab="hist">⊞ History</button>
+      <button class="tab-btn" data-tab="channels">⚙ Channels</button>
+    </nav>
+  </div>
+
+  <!-- ══════════ TAB 1: Create & Pay (JSONForms) ════════════ -->
+  <div id="panel-pay" class="tab-panel active">
+
+    <!-- ── Schema Config ──────────────────────────────────── -->
+    <div class="card">
+      <div class="card-head">
+        <div style="display:flex;align-items:center;gap:8px">
+          <h3>Schema Config</h3>
+          <span class="badge badge-jf">jsonforms.io</span>
+          <span class="muted" style="font-size:10px">— drop in any JSON Schema, the form renders itself</span>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <select id="schema-tpl" onchange="onTplChange()" style="width:170px;font-size:11px">
+            <option value="">Select Template…</option>
+            <option value="MAINTENANCE">🏠 Maintenance</option>
+            <option value="BILLING">🧾 Utility Billing</option>
+            <option value="EVENT">🎉 Event Registration</option>
+            <option value="DONATION">❤️ Donation</option>
+            <option value="CUSTOM">✏️ Custom Schema</option>
+          </select>
+          <span class="muted" style="font-size:10px">or</span>
+          <input id="schema-url-input" placeholder="https://your-app.com/payment-schema.json" style="width:240px;font-size:11px">
+          <button class="btn btn-blue btn-sm" onclick="loadSchemaUrl()">Fetch URL</button>
+        </div>
+      </div>
+      <div class="card-body" style="padding:10px 14px">
+        <details id="schema-details" open>
+          <summary>JSON Schema &amp; UI Schema ▼</summary>
+          <div class="row2" style="margin-top:10px">
+            <div class="field">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+                <label style="margin:0">JSON Schema <span class="muted">(data fields + validation rules)</span></label>
+                <label class="btn btn-secondary btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:3px 9px">
+                  ↑ Upload .json
+                  <input type="file" accept=".json,application/json" style="display:none" onchange="uploadSchema(event,'json-schema-ed')">
+                </label>
+              </div>
+              <textarea id="json-schema-ed" class="schema-editor-area" rows="20"></textarea>
+              <div id="json-schema-fname" style="font-size:10px;color:#3fb950;margin-top:3px;display:none"></div>
+            </div>
+            <div class="field">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+                <label style="margin:0">UI Schema <span class="muted">(optional — layout, labels, ordering)</span></label>
+                <label class="btn btn-secondary btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:3px 9px">
+                  ↑ Upload .json
+                  <input type="file" accept=".json,application/json" style="display:none" onchange="uploadSchema(event,'ui-schema-ed')">
+                </label>
+              </div>
+              <textarea id="ui-schema-ed" class="schema-editor-area" rows="20"></textarea>
+              <div id="ui-schema-fname" style="font-size:10px;color:#3fb950;margin-top:3px;display:none"></div>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary btn-sm" onclick="applySchema()">⚡ Apply Schema → Render Form</button>
+            <button class="btn btn-secondary btn-sm" onclick="resetSchema()">Clear</button>
+          </div>
+        </details>
+        <div id="schema-alert" class="hidden" style="margin-top:6px"></div>
+        <div id="jf-load-msg" class="jf-load-state hidden">
+          <div class="jf-spinner"></div> Loading JSONForms renderer…
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Two-column: Core + Dynamic form / QR + Events ──── -->
+    <div class="two-col" style="align-items:start">
+
+      <!-- LEFT: Core fields + Dynamic form + Submit -->
+      <div style="display:flex;flex-direction:column;gap:12px">
+
+        <!-- Core (always-required) -->
+        <div class="card">
+          <div class="card-head">
+            <h3>Core Fields</h3>
+            <span class="muted" style="font-size:10px">required for every payment</span>
+          </div>
+          <div class="card-body">
+            <div class="row2">
+              <div class="field">
+                <label>Payment Type
+                  <span class="muted" style="font-size:10px;margin-left:4px">— auto from schema · or type your own</span>
+                </label>
+                <div style="position:relative">
+                  <input id="p-ctx" placeholder="auto-derived from schema template" oninput="updatePreview()" autocomplete="off">
+                  <span id="p-ctx-src" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:9px;color:#8b949e;pointer-events:none"></span>
+                </div>
+              </div>
+              <div class="field"><label>Amount (INR) *</label>
+                <input id="p-amount" type="number" step="0.01" min="0.01" placeholder="500.00" oninput="updatePreview()">
+              </div>
+            </div>
+            <div class="row2">
+              <div class="field"><label>QR Expiry (hours, 1–168)</label>
+                <input id="p-expiry" type="number" min="1" max="168" value="24" oninput="updatePreview()">
+              </div>
+              <div class="field"><label>Notify Email on Reconcile</label>
+                <input id="p-notify" type="email" placeholder="treasurer@society.com" oninput="updatePreview()">
+              </div>
+            </div>
+            <!-- UPI destination — overrides global settings per transaction -->
+            <hr class="div" style="margin:6px 0">
+            <div style="font-size:10px;color:#3fb950;font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:6px">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+              UPI Destination
+              <span class="muted" style="font-weight:400">— leave blank to use default from server config</span>
+            </div>
+            <div class="row2">
+              <div class="field">
+                <label>UPI ID (VPA) *</label>
+                <input id="p-upi-vpa" placeholder="e.g. treasurer@upi · 9876543210@hdfc" oninput="updatePreview()" style="font-family:monospace">
+              </div>
+              <div class="field">
+                <label>Display Name <span class="muted">(shown in GPay / PhonePe)</span></label>
+                <input id="p-upi-name" placeholder="e.g. Society Treasurer" oninput="updatePreview()">
+              </div>
+            </div>
+            <hr class="div" style="margin:6px 0">
+            <div class="row2">
+              <div class="field"><label>Idempotent Key <span class="muted">(auto if blank)</span></label>
+                <input id="p-idem" placeholder="auto-generated UUID" oninput="updatePreview()">
+              </div>
+              <div class="field"><label>Tags <span class="muted">(comma-sep)</span></label>
+                <input id="p-tags" placeholder="q4, 2026, maintenance" oninput="updatePreview()">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dynamic form (JSONForms) -->
+        <div class="card">
+          <div class="card-head">
+            <div style="display:flex;align-items:center;gap:8px">
+              <h3>Dynamic Form</h3>
+              <span class="badge" id="jf-schema-name" style="background:#21262d;color:#8b949e;border-color:#30363d">no schema loaded</span>
+            </div>
+            <span id="jf-err-count" class="hidden" style="color:#f85149;font-size:11px"></span>
+          </div>
+          <div class="card-body" style="min-height:80px">
+            <div id="jf-root">
+              <div style="color:#8b949e;font-size:11px;padding:20px;text-align:center;line-height:2">
+                Select a <strong>Schema Template</strong> above to dynamically render payment fields.<br>
+                Any application can provide its own <a href="https://jsonforms.io" target="_blank" style="color:#58a6ff">JSON Schema</a>
+                to extend this form without changing server code.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Submit -->
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="createPayment()">▶ Create Payment</button>
+          <button class="btn btn-secondary btn-sm" onclick="clearPayForm()">Clear Form</button>
+        </div>
+        <div id="p-alert" class="hidden"></div>
+        <div id="p-resp-meta" class="resp-meta hidden"></div>
+        <div id="p-resp" class="resp-box hidden" style="margin-top:4px"></div>
+
+        <!-- Request Preview (live) -->
+        <div class="card">
+          <div class="card-head">
+            <h3>Request Preview</h3>
+            <span class="muted" style="font-size:10px">live — updates as you type</span>
+          </div>
+          <div class="card-body" style="padding:8px">
+            <pre id="payload-preview" class="resp-box" style="max-height:200px;font-size:10px;color:#8b949e">Fill core fields &amp; select a schema to see request payload.</pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: QR + SSE + Audit -->
+      <div style="display:flex;flex-direction:column;gap:12px">
+
+        <div class="card" id="qr-card" style="display:none">
+          <div class="card-head"><h3>UPI QR Code</h3><span id="qr-status"></span></div>
+          <div class="card-body" style="padding:8px">
+            <div class="qr-wrap">
+              <img id="qr-img" src="" alt="QR">
+              <div class="qr-amount" id="qr-amount"></div>
+              <div class="qr-info" id="qr-info"></div>
+              <div class="countdown" id="qr-cd"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Live Payment Events</h3>
+            <span class="muted" style="font-size:10px">SSE stream</span>
+          </div>
+          <div class="card-body">
+            <div id="pay-feed" class="sse-feed" style="margin-bottom:8px"><span class="muted">Waiting…</span></div>
+            <div id="auto-rec-prompt" class="hidden">
+              <div class="inline-alert a-info" id="auto-rec-msg">📬 Notification received</div>
+              <div class="btn-row">
+                <button class="btn btn-primary btn-sm" onclick="doAutoReconcile()">⚡ Auto-Reconcile</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" id="p-audit-card" style="display:none">
+          <div class="card-head">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="method method-get">GET</span>
+              <h3>/auditTrail/<span id="p-audit-txn" class="tb"></span></h3>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="loadPayAudit()">↺</button>
+          </div>
+          <div class="card-body" style="padding:8px">
+            <div id="p-audit-body" class="resp-box"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ TAB 2: Email Reconcile ════════════════════ -->
+  <div id="panel-email" class="tab-panel">
+    <div class="two-col" style="align-items:start">
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="card">
+          <div class="card-head">
+            <div style="display:flex;align-items:center;gap:8px"><span class="method method-post">POST</span><h3>/parseEmail</h3></div>
+          </div>
+          <div class="card-body">
+            <div class="field"><label>Email / SMS Body</label>
+              <textarea id="em-body" rows="7" placeholder="Paste bank notification email or SMS here…"></textarea>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-primary" onclick="parseEmail()">✉ Parse Email</button>
+              <button class="btn btn-secondary btn-sm" onclick="loadSample('email')">Sample Email</button>
+            </div>
+            <div id="em-alert" class="hidden"></div>
+            <div id="em-resp-meta" class="resp-meta hidden"></div>
+            <div id="em-result" class="hidden" style="margin-top:10px">
+              <hr class="div">
+              <div class="section-title">Extracted Data</div>
+              <div id="em-extracted" style="font-size:12px;line-height:2.2"></div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <div style="display:flex;align-items:center;gap:8px"><span class="method method-post">POST</span><h3>/parseSMS</h3></div>
+          </div>
+          <div class="card-body">
+            <div class="field"><label>SMS Body</label>
+              <textarea id="sms-body" rows="3" placeholder="INR 500.00 credited to A/c XX1234 by UPI. UPI Ref:432156789012. -HDFC Bank"></textarea>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-primary" onclick="parseSMS()">📱 Parse SMS</button>
+              <button class="btn btn-secondary btn-sm" onclick="loadSample('sms')">Sample SMS</button>
+            </div>
+            <div id="sms-resp-meta" class="resp-meta hidden"></div>
+            <div id="sms-resp" class="resp-box hidden" style="margin-top:8px;max-height:140px"></div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="card">
+          <div class="card-head">
+            <div style="display:flex;align-items:center;gap:8px"><span class="method method-put">PUT</span><h3>/reconcile/{txn_id}</h3></div>
+          </div>
+          <div class="card-body">
+            <div class="field"><label>Transaction ID *</label><input id="rec-txn" placeholder="BIL-1234567890123-ABCDEF12"></div>
+            <div class="field"><label>Parse ID * <span class="muted">(auto-filled after parse)</span></label><input id="rec-parse" placeholder="UUID from parseEmail / parseSMS"></div>
+            <div class="field"><label>Matched By</label><input id="rec-by" placeholder="auto from auth token"></div>
+            <div class="btn-row"><button class="btn btn-primary" onclick="doReconcile()">⚡ Reconcile</button></div>
+            <div id="rec-alert" class="hidden"></div>
+            <div id="rec-resp-meta" class="resp-meta hidden"></div>
+            <div id="rec-resp" class="resp-box hidden" style="margin-top:6px"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <div style="display:flex;align-items:center;gap:8px"><span class="method method-get">GET</span><h3>/auditTrail/{txn_id}</h3></div>
+          </div>
+          <div class="card-body">
+            <div class="field"><label>Transaction ID</label><input id="audit-txn" placeholder="auto-filled after reconcile"></div>
+            <div class="btn-row"><button class="btn btn-secondary btn-sm" onclick="loadAudit()">View Audit Trail</button></div>
+            <div id="audit-resp" class="resp-box hidden" style="margin-top:8px"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ TAB 3: E2E Test ═══════════════════════════ -->
+  <div id="panel-e2e" class="tab-panel">
+    <div class="step-bar">
+      <div class="step-node"><div class="step-circle active" id="sc1">1</div><div class="step-lbl">Create</div></div>
+      <div class="step-con" id="scon1"></div>
+      <div class="step-node"><div class="step-circle" id="sc2">2</div><div class="step-lbl">QR Shown</div></div>
+      <div class="step-con" id="scon2"></div>
+      <div class="step-node"><div class="step-circle" id="sc3">3</div><div class="step-lbl">Parse Email</div></div>
+      <div class="step-con" id="scon3"></div>
+      <div class="step-node"><div class="step-circle" id="sc4">4</div><div class="step-lbl">Reconcile</div></div>
+      <div class="step-con" id="scon4"></div>
+      <div class="step-node"><div class="step-circle" id="sc5">5</div><div class="step-lbl">Audit</div></div>
+    </div>
+    <div class="step-card active" id="e2e-s1">
+      <div class="step-head"><div><span class="step-num">Step 1</span><strong>Create Payment</strong></div>
+        <div style="display:flex;gap:8px;align-items:center"><span id="e2e-b1"></span><button class="btn btn-primary btn-sm" onclick="e2eStep1()">▶ Run</button></div>
+      </div>
+      <div style="padding:12px;background:#0d1117">
+        <div class="three-col">
+          <div class="field"><label>Context Type <span class="muted" style="font-size:10px">— any value</span></label><input id="e2e-ctx" value="MAINTENANCE" placeholder="MAINTENANCE, BILLING, MY_APP…"></div>
+          <div class="field"><label>Amount (INR)</label><input id="e2e-amt" type="number" value="750"></div>
+          <div class="field"><label>Payer ID</label><input id="e2e-payer" value="test.resident"></div>
+        </div>
+        <div class="three-col">
+          <div class="field"><label>Flat</label><input id="e2e-flat" value="C-303"></div>
+          <div class="field"><label>Member ID</label><input id="e2e-mid" value="MEM-0099"></div>
+          <div class="field"><label>Category</label><input id="e2e-cat" value="e2e_test"></div>
+        </div>
+        <div class="field"><label>Description</label><input id="e2e-desc" value="E2E Test — Monthly maintenance Dec 2026"></div>
+        <div id="e2e-o1" class="resp-box hidden" style="margin-top:8px;max-height:80px"></div>
+      </div>
+    </div>
+    <div class="step-card" id="e2e-s2">
+      <div class="step-head"><div><span class="step-num">Step 2</span><strong>QR Code Displayed</strong></div><span id="e2e-b2"></span></div>
+      <div style="padding:12px;background:#0d1117;display:flex;gap:20px;align-items:flex-start">
+        <div id="e2e-qr"><span class="muted">QR will appear after Step 1</span></div>
+        <div style="font-size:12px;line-height:2" id="e2e-qr-det"></div>
+      </div>
+    </div>
+    <div class="step-card" id="e2e-s3">
+      <div class="step-head"><div><span class="step-num">Step 3</span><strong>Parse Bank Email</strong></div>
+        <div style="display:flex;gap:8px;align-items:center"><span id="e2e-b3"></span><button class="btn btn-primary btn-sm" onclick="e2eStep3()">▶ Run</button></div>
+      </div>
+      <div style="padding:12px;background:#0d1117">
+        <div class="field"><label>Bank Email Body <span class="muted">(auto-filled with matching amount)</span></label><textarea id="e2e-email" rows="5"></textarea></div>
+        <div id="e2e-o3" class="resp-box hidden" style="margin-top:8px;max-height:80px"></div>
+      </div>
+    </div>
+    <div class="step-card" id="e2e-s4">
+      <div class="step-head"><div><span class="step-num">Step 4</span><strong>Reconcile</strong></div>
+        <div style="display:flex;gap:8px;align-items:center"><span id="e2e-b4"></span><button class="btn btn-primary btn-sm" onclick="e2eStep4()">▶ Run</button></div>
+      </div>
+      <div style="padding:12px;background:#0d1117">
+        <div class="row2">
+          <div class="field"><label>Transaction ID</label><input id="e2e-rtxn" readonly placeholder="auto-filled"></div>
+          <div class="field"><label>Parse ID</label><input id="e2e-rparse" readonly placeholder="auto-filled"></div>
+        </div>
+        <div id="e2e-o4" class="resp-box hidden" style="margin-top:8px;max-height:80px"></div>
+      </div>
+    </div>
+    <div class="step-card" id="e2e-s5">
+      <div class="step-head"><div><span class="step-num">Step 5</span><strong>Audit Trail</strong></div>
+        <div style="display:flex;gap:8px;align-items:center"><span id="e2e-b5"></span><button class="btn btn-secondary btn-sm" onclick="e2eStep5()">▶ Load</button></div>
+      </div>
+      <div style="padding:12px;background:#0d1117"><div id="e2e-o5" class="resp-box hidden"></div></div>
+    </div>
+    <div class="btn-row"><button class="btn btn-danger btn-sm" onclick="e2eReset()">↺ Reset</button></div>
+  </div>
+
+  <!-- ══════════ TAB 4: History ═════════════════════════════ -->
+  <div id="panel-hist" class="tab-panel">
+    <div class="card">
+      <div class="filter-bar">
+        <div><div style="font-size:10px;color:#8b949e;margin-bottom:4px">STATUS</div>
+          <div class="chip-group" id="sc-group">
+            <button class="chip sel" data-v="">ALL</button>
+            <button class="chip" data-v="PENDING" data-cls="sel-y">PENDING</button>
+            <button class="chip" data-v="IN_PROGRESS" data-cls="sel">IN PROGRESS</button>
+            <button class="chip" data-v="RECONCILED" data-cls="sel-g">RECONCILED</button>
+            <button class="chip" data-v="FAILED" data-cls="sel-r">FAILED</button>
+            <button class="chip" data-v="EXPIRED" data-cls="sel-gr">EXPIRED</button>
+          </div>
+        </div>
+        <div><div style="font-size:10px;color:#8b949e;margin-bottom:4px">TYPE</div>
+          <div class="chip-group" id="tc-group">
+            <button class="chip sel" data-v="">ALL</button>
+            <button class="chip" data-v="BILLING" data-cls="sel">BILLING</button>
+            <button class="chip" data-v="MAINTENANCE" data-cls="sel">MAINTENANCE</button>
+            <button class="chip" data-v="DONATION" data-cls="sel">DONATION</button>
+            <button class="chip" data-v="EVENT" data-cls="sel">EVENT</button>
+          </div>
+        </div>
+        <div style="flex:1;min-width:150px"><div style="font-size:10px;color:#8b949e;margin-bottom:4px">SEARCH</div>
+          <input id="h-search" placeholder="txn id, payer, flat, ref, desc…" style="width:100%">
+        </div>
+        <div><div style="font-size:10px;color:#8b949e;margin-bottom:4px">FROM</div><input id="h-from" type="date" style="width:130px"></div>
+        <div><div style="font-size:10px;color:#8b949e;margin-bottom:4px">TO</div><input id="h-to" type="date" style="width:130px"></div>
+        <button class="btn btn-blue btn-sm" onclick="loadHist(1)" style="align-self:flex-end">Load</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="txn-table">
+          <thead><tr>
+            <th>Transaction ID</th><th>Type</th><th>Amount</th><th>Payer</th><th>Flat</th><th>Category</th><th>Status</th><th>Created</th><th>Actions</th>
+          </tr></thead>
+          <tbody id="hist-tbody">
+            <tr><td colspan="9" style="text-align:center;color:#8b949e;padding:24px">Click Load to fetch transactions</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <button class="btn btn-secondary btn-sm" id="h-prev" onclick="loadHist(hPage-1)" disabled>← Prev</button>
+        <span class="page-info" id="h-pinfo">—</span>
+        <button class="btn btn-secondary btn-sm" id="h-next" onclick="loadHist(hPage+1)" disabled>Next →</button>
+      </div>
+    </div>
+    <!-- Parse / Reconcile History -->
+    <div class="card">
+      <div class="card-head">
+        <h3>📋 Parse &amp; Reconcile History</h3>
+        <span class="muted" style="font-size:11px">Every email, image and SMS parse attempt — with full extraction debug output</span>
+      </div>
+      <div class="card-body">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+          <div class="chip-group" id="ph-src-group">
+            <button class="chip sel" data-v="">ALL</button>
+            <button class="chip" data-v="EMAIL">EMAIL</button>
+            <button class="chip" data-v="IMAGE">IMAGE</button>
+            <button class="chip" data-v="SMS">SMS</button>
+          </div>
+          <div class="chip-group" id="ph-rec-group">
+            <button class="chip sel" data-v="">ALL</button>
+            <button class="chip" data-v="false" data-cls="sel-y">Unreconciled</button>
+            <button class="chip" data-v="true" data-cls="sel-g">Reconciled</button>
+          </div>
+          <input id="ph-search" placeholder="UPI ref, bank, filename…" style="flex:1;min-width:160px">
+          <button class="btn btn-primary btn-sm" onclick="loadParseHist(1)">↺ Load</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="txn-table">
+            <thead><tr>
+              <th>Time</th><th>Source</th><th>Amount</th><th>UPI Ref (UTR)</th>
+              <th>Bank / App</th><th>Status</th><th>Reconciled</th><th>Debug</th>
+            </tr></thead>
+            <tbody id="ph-tbody">
+              <tr><td colspan="8" style="text-align:center;color:#8b949e;padding:24px">Click Load to fetch parse history</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <button class="btn btn-secondary btn-sm" id="ph-prev" onclick="loadParseHist(phPage-1)" disabled>← Prev</button>
+          <span class="page-info" id="ph-pinfo">—</span>
+          <button class="btn btn-secondary btn-sm" id="ph-next" onclick="loadParseHist(phPage+1)" disabled>Next →</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══════════ TAB 5: Channels ════════════════════════════ -->
+  <div id="panel-channels" class="tab-panel">
+
+    <!-- ── Flow explainer ─────────────────────────────────── -->
+    <div class="card">
+      <div class="card-head"><h3>How Email Reconciliation Works</h3></div>
+      <div class="card-body" style="font-size:12px;line-height:2">
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0;text-align:center;margin-bottom:14px">
+          <div style="padding:10px 6px;background:#162032;border:1px solid #1f3a5f;border-radius:6px 0 0 6px">
+            <div style="font-size:18px">📧</div>
+            <div style="color:#58a6ff;font-weight:600;font-size:11px">IMAP Account</div>
+            <div class="muted" style="font-size:10px">Gmail / any IMAP</div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:center;background:#0d1117;border-top:1px solid #1f3a5f;border-bottom:1px solid #1f3a5f;color:#8b949e;font-size:18px">→</div>
+          <div style="padding:10px 6px;background:#1a2e1a;border:1px solid #2d5a27">
+            <div style="font-size:18px">🤖</div>
+            <div style="color:#3fb950;font-weight:600;font-size:11px">Ollama LLM</div>
+            <div class="muted" style="font-size:10px">extracts ₹ + UPI ref</div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:center;background:#0d1117;border-top:1px solid #2d5a27;border-bottom:1px solid #2d5a27;color:#8b949e;font-size:18px">→</div>
+          <div style="padding:10px 6px;background:#2a1f00;border:1px solid #5a3e00;border-radius:0 6px 6px 0">
+            <div style="font-size:18px">⚡</div>
+            <div style="color:#d29922;font-weight:600;font-size:11px">Auto-Reconcile</div>
+            <div class="muted" style="font-size:10px">matches pending TXN</div>
+          </div>
+        </div>
+        <ol style="padding-left:18px;color:#8b949e;font-size:11px;line-height:2.2">
+          <li>You configure an email account (Gmail with App Password, or any IMAP) below.</li>
+          <li>The background monitor polls it every N seconds for <strong>unseen</strong> emails.</li>
+          <li>Emails are filtered by sender, subject keywords, and body keywords before parsing.</li>
+          <li>Matching emails are sent to <strong>Ollama</strong> which extracts: amount, UPI ref, bank, status.</li>
+          <li>A <code>ParsedTransaction</code> record is stored and an <strong>SSE event</strong> is pushed to your browser.</li>
+          <li>The Live Feed card on the Create &amp; Pay tab lights up → click <em>Auto-Reconcile</em> to match it.</li>
+        </ol>
+        <div class="inline-alert a-warn" style="margin-top:8px;font-size:11px">
+          ⚠ For Gmail: use an <strong>App Password</strong> (not your regular password). Enable IMAP in Gmail Settings → Forwarding and POP/IMAP.
+          <a href="https://myaccount.google.com/apppasswords" target="_blank" style="color:#d29922;margin-left:6px">Create App Password →</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Channel list ────────────────────────────────────── -->
+    <div class="card">
+      <div class="card-head">
+        <h3>Configured Channels</h3>
+        <button class="btn btn-primary btn-sm" onclick="loadChannels()">↺ Refresh</button>
+      </div>
+      <div id="ch-list-wrap" style="overflow-x:auto">
+        <table class="txn-table">
+          <thead><tr>
+            <th>Name</th><th>Provider</th><th>Type</th><th>Poll Interval</th>
+            <th>Last Polled</th><th>Status</th><th>Actions</th>
+          </tr></thead>
+          <tbody id="ch-tbody">
+            <tr><td colspan="7" style="text-align:center;color:#8b949e;padding:20px">Click Refresh to load channels</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="ch-list-alert" class="hidden" style="margin:10px 14px"></div>
+    </div>
+
+    <!-- ── Add / Edit channel ──────────────────────────────── -->
+    <div class="card">
+      <div class="card-head">
+        <h3 id="ch-form-title">Add Email Channel</h3>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-secondary btn-sm" onclick="chPreset('gmail')">Gmail Preset</button>
+          <button class="btn btn-secondary btn-sm" onclick="chPreset('hdfc')">HDFC Filter Preset</button>
+          <button class="btn btn-secondary btn-sm" onclick="chReset()">Reset Form</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <input type="hidden" id="ch-id">
+
+        <div class="section-title" style="margin-top:0">Channel Identity</div>
+        <div class="row2">
+          <div class="field"><label>Channel Name *</label>
+            <input id="ch-name" placeholder="e.g. HDFC Bank Gmail, Society SBI Account">
+          </div>
+          <div class="field"><label>Provider *</label>
+            <select id="ch-provider" onchange="onProviderChange()">
+              <option value="GMAIL_IMAP">GMAIL_IMAP (Gmail with App Password)</option>
+              <option value="IMAP">IMAP (Generic — Outlook, Yahoo, custom)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="section-title">IMAP Credentials</div>
+        <div class="row2">
+          <div class="field"><label>IMAP Host</label>
+            <input id="ch-host" value="imap.gmail.com">
+          </div>
+          <div class="field"><label>Port / SSL</label>
+            <div style="display:flex;gap:6px">
+              <input id="ch-port" type="number" value="993" style="width:80px">
+              <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#e6edf3;margin:0;cursor:pointer">
+                <input id="ch-ssl" type="checkbox" checked style="width:auto"> Use SSL
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Email / Username *</label>
+            <input id="ch-user" type="email" placeholder="society.payments@gmail.com">
+          </div>
+          <div class="field">
+            <label>Password / App Password *
+              <a href="https://myaccount.google.com/apppasswords" target="_blank" style="color:#58a6ff;font-size:10px;margin-left:4px">Get Gmail App Password →</a>
+            </label>
+            <div style="position:relative">
+              <input id="ch-pass" type="password" placeholder="16-char Gmail App Password (xxxx xxxx xxxx xxxx)">
+              <button type="button" onclick="togglePassVis()" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:#8b949e;cursor:pointer;font-size:11px">👁</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-title">Filter Rules
+          <span class="muted" style="font-weight:400;text-transform:none;font-size:10px">— emails that don't match ALL specified filters are ignored</span>
+        </div>
+        <div class="row2">
+          <div class="field"><label>From Address Filter <span class="muted">(comma-sep substrings, e.g. @hdfcbank.net)</span></label>
+            <input id="ch-from" placeholder="alerts@hdfcbank.net, noreply@icicibank.com">
+          </div>
+          <div class="field"><label>Subject Keywords <span class="muted">(comma-sep, ANY must match)</span></label>
+            <input id="ch-subj" placeholder="UPI, credited, debited, transaction">
+          </div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Body Keywords <span class="muted">(comma-sep, ANY must match)</span></label>
+            <input id="ch-body-kw" placeholder="credited, UPI Ref, amount">
+          </div>
+          <div class="field"><label>Poll Interval (seconds, min 30)</label>
+            <input id="ch-interval" type="number" value="60" min="30">
+          </div>
+        </div>
+        <div class="field">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:#e6edf3;margin:0">
+            <input id="ch-active" type="checkbox" checked style="width:auto"> Channel Active (monitor will poll this account)
+          </label>
+        </div>
+
+        <div class="btn-row" style="margin-top:12px">
+          <button class="btn btn-primary" onclick="saveChannel()">💾 Save Channel</button>
+          <button class="btn btn-danger btn-sm" id="ch-del-btn" style="display:none" onclick="deleteChannel()">Delete</button>
+          <button class="btn btn-secondary btn-sm" onclick="chReset()">Cancel</button>
+        </div>
+        <div id="ch-form-alert" class="hidden" style="margin-top:8px"></div>
+      </div>
+    </div>
+
+    <!-- ── Test Email Parsing ──────────────────────────────── -->
+    <div class="card" id="test-email-card">
+      <div class="card-head">
+        <h3>🧪 Test Email Parsing</h3>
+        <span class="muted" style="font-size:11px">Fetch emails live &amp; see exactly what Ollama extracts — nothing is stored to the database</span>
+      </div>
+      <div class="card-body">
+
+        <!-- Source selector -->
+        <div class="section-title" style="margin-top:0">Email Source</div>
+        <div style="display:flex;gap:20px;margin-bottom:12px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#e6edf3;cursor:pointer">
+            <input type="radio" name="test-src" value="saved" checked onchange="testSourceChange()"> Use a saved channel
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#e6edf3;cursor:pointer">
+            <input type="radio" name="test-src" value="custom" onchange="testSourceChange()"> Enter credentials manually
+          </label>
+        </div>
+
+        <!-- Saved channel picker -->
+        <div id="test-saved-src">
+          <div class="field" style="max-width:420px">
+            <label>Channel</label>
+            <select id="test-channel-id">
+              <option value="">— switch to Channels tab and add one first —</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Custom credentials (hidden by default) -->
+        <div id="test-custom-src" style="display:none">
+          <div class="row2">
+            <div class="field"><label>IMAP Host</label>
+              <input id="test-host" value="imap.gmail.com" placeholder="imap.gmail.com">
+            </div>
+            <div class="field"><label>Port / SSL</label>
+              <div style="display:flex;gap:6px;align-items:center">
+                <input id="test-port" type="number" value="993" style="width:80px">
+                <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#e6edf3;margin:0;cursor:pointer">
+                  <input id="test-ssl" type="checkbox" checked style="width:auto"> SSL
+                </label>
+              </div>
+            </div>
+          </div>
+          <div class="row2">
+            <div class="field"><label>Email / Username</label>
+              <input id="test-user" type="email" placeholder="you@gmail.com">
+            </div>
+            <div class="field"><label>App Password</label>
+              <input id="test-pass" type="password" placeholder="xxxx xxxx xxxx xxxx">
+            </div>
+          </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="section-title">Search Filters</div>
+        <div class="row2">
+          <div class="field">
+            <label>Search Phrase
+              <span class="muted" style="font-weight:400;text-transform:none;font-size:10px">— found anywhere in subject or body; leave blank for no phrase filter</span>
+            </label>
+            <input id="test-phrase" placeholder='e.g. "UPI credited" or "INR" or "transaction"'>
+          </div>
+          <div class="field">
+            <label>From Address Filter
+              <span class="muted" style="font-weight:400;text-transform:none;font-size:10px">— optional substring match on sender</span>
+            </label>
+            <input id="test-from" placeholder="e.g. @hdfcbank.net or alerts@">
+          </div>
+        </div>
+        <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap;margin-top:4px">
+          <div class="field" style="width:auto;min-width:0">
+            <label>Max emails</label>
+            <input id="test-limit" type="number" value="5" min="1" max="20" style="width:70px">
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#e6edf3;cursor:pointer;padding-top:18px">
+            <input id="test-include-seen" type="checkbox" checked style="width:auto"> Include already-read emails
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#e6edf3;cursor:pointer;padding-top:18px">
+            <input id="test-mark-seen" type="checkbox" style="width:auto"> Mark fetched as read
+          </label>
+        </div>
+
+        <!-- Ollama parse hint -->
+        <div class="section-title" style="margin-top:16px">Ollama Parse Context
+          <span class="muted" style="font-weight:400;text-transform:none;font-size:10px">— optional: tell Ollama what kind of email to expect so it can extract more accurately</span>
+        </div>
+        <div class="field">
+          <textarea id="test-parse-hint" rows="3"
+            style="font-size:12px;resize:vertical"
+            placeholder="Examples:&#10;• This is a bank transaction alert from HDFC. Extract the credited/debited amount and UPI reference.&#10;• This email is about society maintenance fee payment. Look for amount paid and any transaction ID.&#10;• I expect a refund confirmation email from PhonePe or GPay. Extract the refund amount and status."></textarea>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+          <button class="btn btn-secondary btn-sm" onclick="setTestHint('bank')">Bank alert</button>
+          <button class="btn btn-secondary btn-sm" onclick="setTestHint('maintenance')">Maintenance fee</button>
+          <button class="btn btn-secondary btn-sm" onclick="setTestHint('refund')">Refund</button>
+          <button class="btn btn-secondary btn-sm" onclick="setTestHint('upi')">UPI receipt</button>
+          <button class="btn btn-secondary btn-sm" onclick="setTestHint('')">Clear hint</button>
+        </div>
+
+        <div class="btn-row" style="margin-top:14px">
+          <button class="btn btn-primary" id="test-fetch-btn" onclick="testEmailParse()">🔍 Fetch &amp; Parse with Ollama</button>
+          <button class="btn btn-secondary btn-sm" onclick="clearTestResults()">Clear Results</button>
+        </div>
+        <div id="test-alert" class="hidden" style="margin-top:8px"></div>
+
+        <!-- Results area -->
+        <div id="test-results-wrap" style="display:none;margin-top:18px">
+          <div class="section-title" style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+            <span>Parse Results</span>
+            <span id="test-results-meta" class="muted" style="font-weight:400;text-transform:none;font-size:10px"></span>
+          </div>
+          <div id="test-results-body"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── Parse Payment Screenshot ─────────────────────────── -->
+    <div class="card" id="img-parse-card">
+      <div class="card-head">
+        <h3>📸 Parse Payment Screenshot</h3>
+        <span class="muted" style="font-size:11px">Upload a UPI success screenshot — Ollama vision reads it and extracts amount, UPI ref &amp; status</span>
+      </div>
+      <div class="card-body">
+
+        <!-- Drop zone -->
+        <input type="file" id="img-file" accept="image/*" hidden onchange="onImgFileChange(this)">
+        <div id="img-dropzone"
+          onclick="g('img-file').click()"
+          ondragover="event.preventDefault();this.classList.add('dz-hover')"
+          ondragleave="this.classList.remove('dz-hover')"
+          ondrop="event.preventDefault();this.classList.remove('dz-hover');onImgDrop(event)"
+          style="border:2px dashed #30363d;border-radius:8px;padding:24px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s;background:#0d1117;margin-bottom:12px">
+          <div id="img-placeholder">
+            <div style="font-size:28px;margin-bottom:6px">📱</div>
+            <div style="font-size:13px;color:#e6edf3;font-weight:600">Drop screenshot here or click to upload</div>
+            <div class="muted" style="font-size:11px;margin-top:4px">PhonePe · Google Pay · Paytm · BHIM · Bank app · JPG / PNG / WebP · max 10 MB</div>
+          </div>
+          <img id="img-preview" style="display:none;max-width:100%;max-height:320px;border-radius:6px;object-fit:contain">
+        </div>
+        <div id="img-file-info" class="muted" style="font-size:11px;margin-bottom:10px;display:none"></div>
+        <button class="btn btn-secondary btn-sm" onclick="clearImageUpload()" style="display:none" id="img-clear-file-btn">✕ Remove image</button>
+
+        <!-- Parse Context -->
+        <div class="section-title" style="margin-top:14px">Parse Context
+          <span class="muted" style="font-weight:400;text-transform:none;font-size:10px">— optional hint so Ollama knows what it's looking at</span>
+        </div>
+        <div class="field">
+          <textarea id="img-parse-hint" rows="2" style="font-size:12px;resize:vertical"
+            placeholder="Examples:&#10;• This is a PhonePe UPI payment success screenshot. Extract the amount sent and transaction ID.&#10;• Google Pay receipt showing maintenance fee payment from a resident."></textarea>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;margin-bottom:14px">
+          <button class="btn btn-secondary btn-sm" onclick="setImgHint('upi')">UPI screenshot</button>
+          <button class="btn btn-secondary btn-sm" onclick="setImgHint('phonepay')">PhonePe</button>
+          <button class="btn btn-secondary btn-sm" onclick="setImgHint('gpay')">Google Pay</button>
+          <button class="btn btn-secondary btn-sm" onclick="setImgHint('bank')">Bank receipt</button>
+          <button class="btn btn-secondary btn-sm" onclick="g('img-parse-hint').value=''">Clear</button>
+        </div>
+
+        <!-- Manual Override -->
+        <div class="section-title" style="margin-top:16px">Manual Override
+          <span class="muted" style="font-weight:400;text-transform:none;font-size:10px">— enter UTR &amp; amount directly if AI extraction fails or picks the wrong value</span>
+        </div>
+        <div class="row2" style="align-items:flex-end">
+          <div class="field" style="flex:1;margin:0">
+            <label>UTR / UPI Reference Number</label>
+            <input id="img-manual-utr" type="text" placeholder="e.g. 586264656963 (12-digit bank number)"
+              maxlength="20" style="font-family:monospace;font-size:13px;letter-spacing:.5px"
+              oninput="onManualOverrideChange()">
+          </div>
+          <div class="field" style="width:130px;margin:0">
+            <label>Amount (₹)</label>
+            <input id="img-manual-amount" type="number" placeholder="e.g. 1.00" min="0" step="0.01"
+              oninput="onManualOverrideChange()">
+          </div>
+        </div>
+        <div id="img-manual-active-notice" style="display:none;margin-top:6px;font-size:11px;color:#d29922;background:#2a1f00;border:1px solid #5a3e00;border-radius:4px;padding:6px 10px">
+          ⚡ Manual override active — system will use these values for Gmail search (AI extraction will still be attempted first)
+        </div>
+
+        <!-- Gmail channel for cross-verification -->
+        <div class="section-title" style="margin-top:16px">Gmail Channel for Verification
+          <span class="muted" style="font-weight:400;text-transform:none;font-size:10px">— system will search this inbox for the matching bank notification email</span>
+        </div>
+        <div class="row2" style="align-items:flex-end">
+          <div class="field" style="margin:0">
+            <label>Channel</label>
+            <select id="img-channel-id">
+              <option value="">— skip email cross-check (extract only) —</option>
+            </select>
+          </div>
+          <div class="field" style="margin:0;width:auto">
+            <label>Search back (days)</label>
+            <input id="img-search-days" type="number" value="3" min="1" max="14" style="width:70px">
+          </div>
+        </div>
+        <div class="inline-alert a-warn" style="font-size:11px;margin-top:8px">
+          If a channel is selected, the system searches Gmail for a bank notification email containing the UPI reference from the screenshot and cross-checks the amounts. Selecting no channel only extracts screenshot data.
+        </div>
+
+        <!-- Transaction ID for auto-reconcile -->
+        <div class="section-title" style="margin-top:14px">Auto-Reconcile (optional)
+          <span class="muted" style="font-weight:400;text-transform:none;font-size:10px">— if CONFIRMED, instantly reconcile against this payment</span>
+        </div>
+        <div class="field" style="max-width:360px">
+          <label>Transaction ID to reconcile</label>
+          <input id="img-txn-id" placeholder="TXN-MAINT-... (leave blank to reconcile manually later)" style="font-family:monospace;font-size:11px">
+        </div>
+
+        <div class="btn-row" style="margin-top:14px">
+          <button class="btn btn-primary" id="img-parse-btn" onclick="parseImageUpload()">🤖 Extract with Ollama</button>
+          <button class="btn" id="img-verify-btn" onclick="verifyPaymentScreenshot()"
+            style="background:#1a2e1a;color:#3fb950;border:1px solid #2d5a27;display:none">
+            ✅ Verify &amp; Cross-check Gmail
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="checkImgSetup()" id="img-setup-btn" title="Check if llava and pytesseract are installed">🔧 Check Setup</button>
+        </div>
+        <div id="img-setup-result" style="display:none;margin-top:8px"></div>
+        <div id="img-alert" class="hidden" style="margin-top:8px"></div>
+
+        <!-- Results -->
+        <div id="img-results-wrap" style="display:none;margin-top:18px">
+          <div class="section-title" style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
+            <span>Result</span>
+            <span id="img-results-meta" class="muted" style="font-weight:400;text-transform:none;font-size:10px"></span>
+          </div>
+          <div id="img-result-body"></div>
+
+          <!-- Manual reconcile form — shown when not auto-reconciled -->
+          <div id="img-reconcile-wrap" style="display:none;margin-top:14px;border:1px solid #1f3a5f;border-radius:6px;padding:14px;background:#0a1628">
+            <div class="section-title" style="margin-top:0;color:#58a6ff">Reconcile Manually</div>
+            <p class="muted" style="font-size:11px;margin:0 0 10px">Enter the Transaction ID to reconcile this payment against.</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+              <div class="field" style="flex:1;min-width:200px;margin:0">
+                <label>Transaction ID</label>
+                <input id="img-manual-txn-id" placeholder="TXN-MAINT-..." style="font-family:monospace">
+              </div>
+              <button class="btn btn-primary" onclick="reconcileFromImage()" style="margin-bottom:0">⚡ Reconcile Now</button>
+            </div>
+            <div id="img-reconcile-alert" class="hidden" style="margin-top:8px"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div><!-- /panel-channels -->
+
+</div><!-- /main -->
+
+<!-- ══════════════════════════════════════════════════════════
+     VANILLA JS — Auth, SSE, tabs, history, E2E, email reconcile
+     JSONForms state is read from window._jfData / window._jfErrors
+════════════════════════════════════════════════════════════ -->
+<script>
+/* ════ SCHEMA TEMPLATES ═══════════════════════════════════ */
+const SCHEMAS = {
+  MAINTENANCE: {
+    name: '🏠 Maintenance Payment',
+    schema: {
+      type:'object', title:'Maintenance',
+      properties:{
+        payer_id:    {type:'string', title:'Payer Username'},
+        flat_number: {type:'string', title:'Flat Number',   description:'e.g. A-101, B-204'},
+        member_id:   {type:'string', title:'Member ID'},
+        period: {
+          type:'string', title:'Maintenance Period',
+          oneOf:['Jan 2026','Feb 2026','Mar 2026','Apr 2026','May 2026','Jun 2026',
+                 'Jul 2026','Aug 2026','Sep 2026','Oct 2026','Nov 2026','Dec 2026',
+                 'Q1 2026','Q2 2026','Q3 2026','Q4 2026'].map(v=>({const:v,title:v}))
+        },
+        description:{type:'string', title:'Notes / Remarks'}
+      },
+      required:['flat_number','member_id','period']
+    },
+    uischema:{
+      type:'VerticalLayout', elements:[
+        {type:'HorizontalLayout', elements:[
+          {type:'Control', scope:'#/properties/payer_id'},
+          {type:'Control', scope:'#/properties/flat_number'}
+        ]},
+        {type:'HorizontalLayout', elements:[
+          {type:'Control', scope:'#/properties/member_id'},
+          {type:'Control', scope:'#/properties/period'}
+        ]},
+        {type:'Control', scope:'#/properties/description', options:{multi:true}}
+      ]
+    }
+  },
+  BILLING: {
+    name: '🧾 Utility Bill Payment',
+    schema:{
+      type:'object', title:'Utility Bill',
+      properties:{
+        payer_id:       {type:'string', title:'Payer Username'},
+        flat_number:    {type:'string', title:'Flat / Unit'},
+        invoice_number: {type:'string', title:'Invoice Number'},
+        bill_period:    {type:'string', title:'Bill Period', description:'e.g. Dec 2026'},
+        utility_type:{
+          type:'string', title:'Utility Type',
+          enum:['Water','Electricity','Gas','Parking','Lift Maintenance','Security','Internet']
+        },
+        meter_reading:{type:'number', title:'Meter Reading (units)', minimum:0},
+        description:  {type:'string', title:'Notes'}
+      },
+      required:['flat_number','invoice_number','utility_type']
+    },
+    uischema:{
+      type:'VerticalLayout', elements:[
+        {type:'HorizontalLayout', elements:[
+          {type:'Control', scope:'#/properties/payer_id'},
+          {type:'Control', scope:'#/properties/flat_number'}
+        ]},
+        {type:'HorizontalLayout', elements:[
+          // generateUuid:true → renders with ⟳ Generate button
+          {type:'Control', scope:'#/properties/invoice_number', options:{generateUuid:true}},
+          {type:'Control', scope:'#/properties/bill_period'}
+        ]},
+        {type:'HorizontalLayout', elements:[
+          {type:'Control', scope:'#/properties/utility_type'},
+          {type:'Control', scope:'#/properties/meter_reading'}
+        ]},
+        {type:'Control', scope:'#/properties/description'}
+      ]
+    }
+  },
+  EVENT: {
+    name: '🎉 Event Registration',
+    schema:{
+      type:'object', title:'Event Payment',
+      properties:{
+        attendee_name:  {type:'string',  title:'Attendee Full Name'},
+        attendee_email: {type:'string',  title:'Attendee Email', format:'email'},
+        member_id:      {type:'string',  title:'Member ID (optional)'},
+        event_name:     {type:'string',  title:'Event Name'},
+        event_date:     {type:'string',  title:'Event Date', format:'date'},
+        tickets:        {type:'integer', title:'Number of Tickets', minimum:1, maximum:10, default:1},
+        ticket_type:{
+          type:'string', title:'Ticket Type',
+          enum:['General','VIP','Family Pack','Senior Citizen','Child (Below 12)']
+        },
+        dietary_pref:{
+          type:'string', title:'Dietary Preference',
+          enum:['Vegetarian','Non-Vegetarian','Vegan','Jain','No Preference']
+        }
+      },
+      required:['attendee_name','event_name','ticket_type']
+    },
+    uischema:{
+      type:'VerticalLayout', elements:[
+        {type:'HorizontalLayout', elements:[
+          {type:'Control', scope:'#/properties/attendee_name'},
+          {type:'Control', scope:'#/properties/attendee_email'}
+        ]},
+        {type:'HorizontalLayout', elements:[
+          {type:'Control', scope:'#/properties/event_name'},
+          {type:'Control', scope:'#/properties/event_date'}
+        ]},
+        {type:'HorizontalLayout', elements:[
+          {type:'Control', scope:'#/properties/ticket_type'},
+          {type:'Control', scope:'#/properties/tickets'},
+          {type:'Control', scope:'#/properties/dietary_pref'}
+        ]},
+        {type:'Control', scope:'#/properties/member_id'}
+      ]
+    }
+  },
+  DONATION: {
+    name: '❤️ Donation',
+    schema:{
+      type:'object', title:'Donation',
+      properties:{
+        donor_name:  {type:'string',  title:'Donor Name'},
+        donor_email: {type:'string',  title:'Donor Email', format:'email'},
+        member_id:   {type:'string',  title:'Member ID (optional)'},
+        fund:{
+          type:'string', title:'Fund / Cause',
+          enum:['General Welfare','Education Fund','Library Fund','Sports & Recreation','Festival Fund','Emergency Relief','Children\'s Fund']
+        },
+        anonymous: {type:'boolean', title:'Keep this donation anonymous', default:false},
+        message:   {type:'string',  title:'Message to Society', description:'Optional personal note'}
+      },
+      required:['donor_name','fund']
+    },
+    uischema:{
+      type:'VerticalLayout', elements:[
+        {type:'HorizontalLayout', elements:[
+          {type:'Control', scope:'#/properties/donor_name'},
+          {type:'Control', scope:'#/properties/donor_email'}
+        ]},
+        {type:'HorizontalLayout', elements:[
+          {type:'Control', scope:'#/properties/fund'},
+          {type:'Control', scope:'#/properties/member_id'}
+        ]},
+        {type:'Control', scope:'#/properties/anonymous'},
+        {type:'Control', scope:'#/properties/message', options:{multi:true}}
+      ]
+    }
+  },
+  CUSTOM: {
+    name: '✏️ Custom Schema',
+    schema:{
+      type:'object',
+      properties:{
+        custom_field:{type:'string', title:'My Custom Field', description:'Add your own fields'}
+      }
+    },
+    uischema: null
+  }
+};
+
+/* ════ STATE ══════════════════════════════════════════════ */
+let token=null, tokenExp=null, expTimer=null, cdTimer=null, sseConn=null;
+let lastTxnId=null, lastParseId=null;
+let hPage=1, hStatus='', hType='';
+const e2e={txnId:null,parseId:null,amount:null};
+
+// JSONForms bridge — module script populates these
+window._jfData   = {};
+window._jfErrors = [];
+window._jfLoaded = false;
+window._setJfSchema = null; // set by module script
+
+/* ════ AUTH ════════════════════════════════════════════════ */
+async function doLogin(){
+  const url=g('kc-url').value.trim(), realm=g('kc-realm').value.trim();
+  const client=g('kc-client').value.trim(), user=g('kc-user').value.trim();
+  const pass=g('kc-pass').value, scope=g('kc-scope').value.trim();
+  try{
+    const r=await fetch(`${url}/realms/${realm}/protocol/openid-connect/token`,{
+      method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:new URLSearchParams({grant_type:'password',client_id:client,username:user,password:pass,scope}),
+    });
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.error_description||d.error||'Login failed');
+    token=d.access_token;
+    const p=jwt(token);
+    tokenExp=p.exp*1000;
+    renderUser(p); startExpiry();
+  }catch(e){setUserErr(e.message);}
+}
+function doClear(){
+  token=null;tokenExp=null;
+  g('user-info').innerHTML='';g('user-info').classList.add('hidden');
+  if(expTimer)clearInterval(expTimer);
+}
+function jwt(t){try{return JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));}catch{return{};}}
+function renderUser(p){
+  const roles=(p.realm_access?.roles||[]).filter(r=>['admin','committee_member','resident'].includes(r));
+  const chips=roles.map(r=>`<span class="role-chip ${r==='admin'?'admin':''}">${r}</span>`).join('');
+  const aud=[].concat(p.aud||[]); const ok=aud.includes('payment-service');
+  g('user-info').innerHTML=`<div class="user-card"><div class="u-name">${p.preferred_username||p.sub}</div><div class="muted">${p.email||''}</div><div>Roles: ${chips}</div><div>Audience: <span style="color:${ok?'#3fb950':'#f85149'}">${ok?'✓':'✗'} payment-service</span></div><div id="exp-line">Expires: —</div></div>`;
+  g('user-info').classList.remove('hidden');
+}
+function startExpiry(){
+  if(expTimer)clearInterval(expTimer);
+  expTimer=setInterval(()=>{
+    const el=g('exp-line');if(!el)return;
+    const left=Math.max(0,Math.round((tokenExp-Date.now())/1000));
+    const m=Math.floor(left/60),s=left%60;
+    const c=left>120?'expiry-ok':left>30?'expiry-warn':'expiry-dead';
+    el.innerHTML=`Expires: <span class="${c}">${m}m ${s}s</span>`;
+    if(!left)clearInterval(expTimer);
+  },1000);
+}
+function setUserErr(msg){g('user-info').innerHTML=`<div class="inline-alert a-err">${msg}</div>`;g('user-info').classList.remove('hidden');}
+
+/* ════ SSE ═════════════════════════════════════════════════ */
+function connectSSE(){
+  if(sseConn)sseConn.close();
+  sseConn=new EventSource('/events/subscribe');
+  const dot=g('sse-dot');
+  sseConn.onopen=()=>dot.classList.add('live');
+  sseConn.onerror=()=>dot.classList.remove('live');
+  sseConn.addEventListener('email_received',ev=>{
+    const d=JSON.parse(ev.data);
+    pushFeed(d);
+    if(lastTxnId&&d.extracted_amount!=null){
+      lastParseId=d.parse_id;
+      g('auto-rec-msg').innerHTML=`📬 Notification: <span class="tg">₹${d.extracted_amount}</span> · UPI ${d.extracted_upi_ref||'—'}<br><span class="muted">parse_id: ${d.parse_id}</span>`;
+      g('auto-rec-prompt').classList.remove('hidden');
+    }
+  });
+}
+function pushFeed(d){
+  const amt=d.extracted_amount?`<span class="ev-amt">₹${d.extracted_amount}</span> `:'';
+  const h=`<div class="sse-ev"><span class="ev-type">email_received</span> ${amt}UPI:${d.extracted_upi_ref||'—'} [${d.extracted_status||'?'}]</div>`;
+  ['sidebar-feed','pay-feed'].forEach(id=>{
+    const el=g(id);if(!el)return;
+    if(el.querySelector('.muted'))el.innerHTML='';
+    el.insertAdjacentHTML('afterbegin',h);
+  });
+}
+async function doAutoReconcile(){
+  if(!lastTxnId||!lastParseId)return;
+  const r=await api('PUT',`/reconcile/${lastTxnId}`,{parse_id:lastParseId});
+  if(r.ok){showAlert('p-alert','a-ok',`✓ Reconciled! Status: ${r.data.status}`);g('qr-status').innerHTML=sbadge(r.data.status);loadPayAudit();}
+  else{showAlert('p-alert','a-err',r.data.detail||'Failed');}
+}
+
+/* ════ TAB 1: Schema management ═══════════════════════════ */
+function setCtxType(value,source){
+  g('p-ctx').value=value||'';
+  g('p-ctx-src').textContent=source||'';
+  updatePreview();
+}
+
+function deriveCtxType(schema){
+  // 1. Explicit extension field in the schema
+  if(schema['x-ctx-type'])    return schema['x-ctx-type'];
+  if(schema['x-payment-type'])return schema['x-payment-type'];
+  // 2. Schema title mapped to known values (case-insensitive)
+  const t=(schema.title||'').toUpperCase();
+  const known=['BILLING','MAINTENANCE','DONATION','EVENT'];
+  for(const k of known){if(t.includes(k))return k;}
+  // 3. Return raw title so any app type passes through
+  return schema.title||'';
+}
+
+function onTplChange(){
+  const tpl=g('schema-tpl').value;
+  if(!tpl)return;
+  const s=SCHEMAS[tpl];
+  if(!s)return;
+  g('json-schema-ed').value=JSON.stringify(s.schema,null,2);
+  g('ui-schema-ed').value=s.uischema?JSON.stringify(s.uischema,null,2):'';
+  if(tpl!=='CUSTOM') setCtxType(tpl,'template');
+  g('schema-details').open=false;
+  applySchema();
+}
+
+function applySchema(){
+  const schStr=g('json-schema-ed').value.trim();
+  if(!schStr){showAlert('schema-alert','a-err','JSON Schema is empty');return;}
+  let schema,uischema;
+  try{schema=JSON.parse(schStr);}
+  catch(e){showAlert('schema-alert','a-err','Invalid JSON Schema: '+e.message);return;}
+  const uiStr=g('ui-schema-ed').value.trim();
+  if(uiStr){try{uischema=JSON.parse(uiStr);}catch(e){showAlert('schema-alert','a-err','Invalid UI Schema: '+e.message);return;}}
+  if(typeof window._setJfSchema==='function'){
+    window._setJfSchema(schema,uischema||null);
+    const name=schema.title||g('schema-tpl').value||'Custom';
+    g('jf-schema-name').textContent=name;
+    g('jf-schema-name').style.cssText='background:#162032;color:#3fb950;border-color:#2d5a27';
+    // Auto-derive ctx_type from schema — don't force user to pick it manually
+    if(!g('p-ctx').value||g('p-ctx-src').textContent==='schema'){
+      const derived=deriveCtxType(schema);
+      if(derived) setCtxType(derived,'schema');
+    }
+    showAlert('schema-alert','a-ok','✓ Schema applied — form rendered');
+    updatePreview();
+  }else{
+    showAlert('schema-alert','a-warn','JSONForms still loading — try again in a moment');
+  }
+}
+
+function resetSchema(){
+  g('json-schema-ed').value='';g('ui-schema-ed').value='';g('schema-tpl').value='';
+  g('jf-schema-name').textContent='no schema loaded';
+  g('jf-schema-name').style.cssText='';
+  if(typeof window._setJfSchema==='function') window._setJfSchema({},null);
+  g('schema-alert').className='hidden';
+  ['json-schema-fname','ui-schema-fname'].forEach(id=>{const e=g(id);if(e){e.textContent='';e.style.display='none';}});
+  setCtxType('','');
+  updatePreview();
+}
+
+function uploadSchema(evt,targetId){
+  const file=evt.target.files[0];
+  if(!file)return;
+  const fnId=targetId==='json-schema-ed'?'json-schema-fname':'ui-schema-fname';
+  const reader=new FileReader();
+  reader.onload=e=>{
+    let text=e.target.result;
+    // Pretty-print if valid JSON
+    try{text=JSON.stringify(JSON.parse(text),null,2);}catch(_){}
+    g(targetId).value=text;
+    const fn=g(fnId);fn.textContent=`✓ ${file.name}`;fn.style.display='block';
+    // Auto-expand the details panel so user sees the content
+    g('schema-details').open=true;
+    // If both editors have content, auto-apply
+    if(g('json-schema-ed').value.trim()) applySchema();
+  };
+  reader.onerror=()=>showAlert('schema-alert','a-err',`Failed to read ${file.name}`);
+  reader.readAsText(file);
+  // Reset input so same file can be re-uploaded
+  evt.target.value='';
+}
+
+async function loadSchemaUrl(){
+  const url=g('schema-url-input').value.trim();
+  if(!url){showAlert('schema-alert','a-err','Enter a URL first');return;}
+  showAlert('schema-alert','a-info','Fetching…');
+  try{
+    const r=await fetch(url);
+    if(!r.ok)throw new Error(`HTTP ${r.status}`);
+    const cfg=await r.json();
+    // Support { schema, uischema, defaults } or bare JSON Schema
+    const schema=cfg.schema||cfg;
+    const uischema=cfg.uischema||null;
+    const defaults=cfg.defaults||{};
+    g('json-schema-ed').value=JSON.stringify(schema,null,2);
+    g('ui-schema-ed').value=uischema?JSON.stringify(uischema,null,2):'';
+    // ctx_type: prefer explicit defaults, then derive from schema
+    const ctxVal=defaults.ctx_type||deriveCtxType(schema);
+    if(ctxVal) setCtxType(ctxVal,'url');
+    if(defaults.amount)g('p-amount').value=defaults.amount;
+    if(defaults.expiry_hours)g('p-expiry').value=defaults.expiry_hours;
+    g('schema-details').open=false;
+    applySchema();
+    showAlert('schema-alert','a-ok',`✓ Schema loaded from URL`);
+  }catch(e){showAlert('schema-alert','a-err','Failed to fetch: '+e.message);}
+}
+
+/* ════ TAB 1: Create Payment ══════════════════════════════ */
+function buildPayload(){
+  const amount=parseFloat(g('p-amount').value);
+  const fd=window._jfData||{};
+  const tpl=g('schema-tpl').value;
+  const tags=g('p-tags').value.trim()?g('p-tags').value.split(',').map(t=>t.trim()).filter(Boolean):[tpl||'custom'];
+  const ctxType=(g('p-ctx').value||'').trim()||'MAINTENANCE';
+  return{
+    ctx_type:ctxType,
+    amount:isNaN(amount)?null:amount,
+    upi_vpa:v('p-upi-vpa')||null,
+    upi_display_name:v('p-upi-name')||null,
+    expiry_hours:parseInt(g('p-expiry').value)||24,
+    notify_email:v('p-notify')||null,
+    idempotent_key:v('p-idem')||null,
+    tags,
+    // Map well-known identity fields from JSONForms data
+    payer_id:fd.payer_id||fd.attendee_name||fd.donor_name||null,
+    flat_number:fd.flat_number||null,
+    member_id:fd.member_id||null,
+    reference:fd.period||fd.bill_period||fd.invoice_number||fd.event_name||fd.fund||null,
+    description:fd.description||fd.message||null,
+    payment_category:buildCat(fd),
+    // All form data into metadata (single source of truth)
+    payment_metadata:Object.keys(fd).length?{...fd,_schema_template:tpl||'custom',_schema_title:fd._schema_title||g('jf-schema-name').textContent}:null,
+  };
+}
+
+function buildCat(fd){
+  const ctx=((g('p-ctx')?.value||'').trim()||'payment').toLowerCase();
+  const extra=fd.period||fd.bill_period||fd.fund||fd.event_name||fd.utility_type||'';
+  return extra?`${ctx}_${extra.toLowerCase().replace(/[\s\/]+/g,'_')}`:ctx;
+}
+
+function autoFillAmount(fd){
+  const amtEl=g('p-amount');
+  if(!amtEl)return;
+  // Don't override if user manually typed an amount
+  if(amtEl.dataset.userSet==='1'&&amtEl.value)return;
+
+  // Pattern 1: top-level numeric field named amount/total/price
+  for(const k of['amount','total','totalAmount','total_amount','price']){
+    if(fd[k]!=null&&!isNaN(fd[k])&&parseFloat(fd[k])>0){
+      amtEl.value=parseFloat(fd[k]).toFixed(2);return;
+    }
+  }
+  // Pattern 2: any array whose items have numeric `price` (and optional `quantity`)
+  for(const val of Object.values(fd)){
+    if(!Array.isArray(val)||!val.length)continue;
+    if(val[0]?.price==null)continue;
+    const total=val.reduce((sum,item)=>{
+      const qty=parseFloat(item.quantity)||1;
+      const price=parseFloat(item.price)||0;
+      return sum+qty*price;
+    },0);
+    if(total>0){amtEl.value=total.toFixed(2);return;}
+  }
+}
+
+function updatePreview(){
+  const fd=window._jfData||{};
+  autoFillAmount(fd);
+  const pl=buildPayload();
+  const el=g('payload-preview');
+  if(el)el.textContent=JSON.stringify(pl,null,2);
+  // Update error badge
+  const errs=window._jfErrors||[];
+  const eb=g('jf-err-count');
+  if(errs.length){eb.textContent=`⚠ ${errs.length} validation error${errs.length>1?'s':''}`;eb.classList.remove('hidden');}
+  else{eb.classList.add('hidden');}
+  // Highlight Amount field if still empty
+  const amtEl=g('p-amount');
+  if(amtEl)amtEl.style.borderColor=(!amtEl.value||parseFloat(amtEl.value)<=0)?'#d29922':'';
+}
+window.updatePreview=updatePreview;
+
+// Mark amount as user-typed so auto-fill doesn't override it
+document.addEventListener('DOMContentLoaded',()=>{
+  const el=g('p-amount');
+  if(el)el.addEventListener('input',()=>{el.dataset.userSet=el.value?'1':'';});
+});
+
+async function createPayment(){
+  const amount=parseFloat(g('p-amount').value);
+  if(!amount||amount<=0)return showAlert('p-alert','a-err','Amount required and must be > 0');
+  const errs=window._jfErrors||[];
+  if(errs.length>0)return showAlert('p-alert','a-err',`Form validation: ${errs[0].message}`);
+
+  const body=buildPayload();
+  const t0=Date.now();
+  const r=await api('POST','/createPayment',body);
+  const ms=Date.now()-t0;
+  respMeta('p-resp-meta',r.status,ms);
+  showResp('p-resp',r.data);
+  if(r.ok){
+    lastTxnId=r.data.transaction_id;
+    showAlert('p-alert','a-ok',`✓ Created: ${r.data.transaction_id}`);
+    renderQR(r.data); startCd(r.data.expiry_at);
+    g('p-audit-txn').textContent=r.data.transaction_id;
+    g('p-audit-card').style.display='';
+    loadPayAudit();
+  }else{showAlert('p-alert','a-err',r.data.detail||JSON.stringify(r.data));}
+}
+
+function qrSrc(raw){
+  if(!raw)return '';
+  // Backend returns raw base64 — prefix it for <img src>
+  return raw.startsWith('data:') ? raw : `data:image/png;base64,${raw}`;
+}
+function renderQR(d){
+  g('qr-card').style.display='';
+  g('qr-img').src=qrSrc(d.upi_qr_data);
+  g('qr-amount').textContent=`₹${parseFloat(d.amount).toFixed(2)}`;
+  g('qr-status').innerHTML=sbadge(d.status);
+  const meta=d.payment_metadata||{};
+  // Resolve which VPA is embedded in the QR (field on response, or fallback label)
+  const resolvedVpa = d.upi_vpa || v('p-upi-vpa') || '(server default)';
+  const resolvedName = v('p-upi-name') || '';
+  g('qr-info').innerHTML=`
+    <div><span class="muted">TXN: </span><span class="tb" style="font-size:10px">${d.transaction_id}</span></div>
+    <div style="margin:4px 0;padding:5px 8px;background:#1a2e1a;border:1px solid #2d5a27;border-radius:5px;font-size:12px">
+      <span style="color:#3fb950">⬤</span>
+      <span style="color:#e6edf3;font-family:monospace;margin-left:4px">${resolvedVpa}</span>
+      ${resolvedName?`<span class="muted" style="margin-left:6px">· ${resolvedName}</span>`:''}
+    </div>
+    <div><span class="muted">Type: </span>${d.ctx_type}${d.payment_category?' · '+d.payment_category:''}</div>
+    ${d.payer_id?`<div><span class="muted">Payer: </span>${d.payer_id}${d.flat_number?' ('+d.flat_number+')':''}</div>`:''}
+    ${d.reference?`<div><span class="muted">Ref: </span>${d.reference}</div>`:''}
+    ${d.description?`<div><span class="muted">Desc: </span>${d.description}</div>`:''}
+    <div><span class="muted">Checksum: </span><span style="font-size:10px;color:#8b949e">${(d.checksum_hash||'').substring(0,20)}…</span></div>
+  `;
+}
+function startCd(iso){
+  if(cdTimer)clearInterval(cdTimer);
+  const exp=new Date(iso).getTime();
+  const tick=()=>{
+    const el=g('qr-cd');if(!el)return clearInterval(cdTimer);
+    const left=Math.max(0,Math.round((exp-Date.now())/1000));
+    const h=Math.floor(left/3600),m=Math.floor((left%3600)/60),s=left%60;
+    if(!left){el.textContent='QR EXPIRED';el.className='countdown expired';clearInterval(cdTimer);}
+    else{el.className='countdown';el.textContent=`Expires in ${h?h+'h ':''}${m}m ${s}s`;}
+  };
+  tick();cdTimer=setInterval(tick,1000);
+}
+async function loadPayAudit(){
+  if(!lastTxnId)return;
+  const r=await api('GET',`/auditTrail/${lastTxnId}`);
+  g('p-audit-body').textContent=JSON.stringify(r.data,null,2);
+}
+function clearPayForm(){
+  ['p-notify','p-idem','p-tags'].forEach(i=>{const e=g(i);if(e)e.value='';});
+  g('p-amount').value='';
+  ['p-alert','p-resp','p-resp-meta'].forEach(i=>{const e=g(i);if(e)e.className=i==='p-resp'?'resp-box hidden':'hidden';});
+  g('qr-card').style.display='none'; g('p-audit-card').style.display='none';
+  g('auto-rec-prompt').classList.add('hidden');
+  updatePreview();
+}
+
+/* ════ TAB 2: Email Reconcile ══════════════════════════════ */
+async function parseEmail(){
+  const raw=g('em-body').value.trim();
+  if(!raw)return showAlert('em-alert','a-err','Email body is required');
+  const t0=Date.now();
+  const r=await api('POST','/parseEmail',{source_type:'EMAIL',raw_text:raw});
+  respMeta('em-resp-meta',r.status,Date.now()-t0);
+  if(r.ok){
+    lastParseId=r.data.parse_id;
+    g('rec-parse').value=r.data.parse_id;
+    renderExtracted(r.data);
+    showAlert('em-alert','a-ok',`✓ parse_id: ${r.data.parse_id}`);
+  }else{showAlert('em-alert','a-err',r.data.detail||'Failed');}
+}
+function renderExtracted(d){
+  const kv=(k,val)=>val!=null?`<div><span class="muted" style="display:inline-block;width:110px">${k}</span><span class="tg">${val}</span></div>`:'';
+  g('em-extracted').innerHTML=[
+    kv('Amount',d.extracted_amount?`₹${d.extracted_amount}`:null),
+    kv('UPI Ref',d.extracted_upi_ref),kv('Bank',d.extracted_bank),
+    kv('Timestamp',d.extracted_timestamp),kv('Status',d.extracted_status),
+    kv('Is Reconciled',d.is_reconciled?'Yes':'No'),kv('Parse ID',d.parse_id),
+  ].filter(Boolean).join('');
+  g('em-result').classList.remove('hidden');
+}
+async function parseSMS(){
+  const raw=g('sms-body').value.trim();if(!raw)return;
+  const t0=Date.now();
+  const r=await api('POST','/parseSMS',{source_type:'SMS',raw_text:raw});
+  respMeta('sms-resp-meta',r.status,Date.now()-t0);
+  showResp('sms-resp',r.data);
+  if(r.ok&&!g('rec-parse').value)g('rec-parse').value=r.data.parse_id;
+}
+async function doReconcile(){
+  const txn=g('rec-txn').value.trim(),pid=g('rec-parse').value.trim();
+  if(!txn||!pid)return showAlert('rec-alert','a-err','Transaction ID and Parse ID required');
+  const t0=Date.now();
+  const r=await api('PUT',`/reconcile/${txn}`,{parse_id:pid,matched_by:v('rec-by')||null});
+  respMeta('rec-resp-meta',r.status,Date.now()-t0);
+  showResp('rec-resp',r.data);
+  if(r.ok){showAlert('rec-alert','a-ok',`✓ ${r.data.message}`);g('audit-txn').value=txn;}
+  else{showAlert('rec-alert','a-err',r.data.detail||r.data.message||'Failed');}
+}
+async function loadAudit(){
+  const txn=g('audit-txn').value.trim()||g('rec-txn').value.trim();if(!txn)return;
+  const r=await api('GET',`/auditTrail/${txn}`);
+  g('audit-resp').textContent=JSON.stringify(r.data,null,2);
+  g('audit-resp').classList.remove('hidden');
+}
+function loadSample(type){
+  if(type==='email')g('em-body').value=`Dear Customer,\n\nYour HDFC Bank account XX4567 has been credited with Rs.750.00 on 27-Jun-2026 at 10:45 AM.\nInfo: UPI-Credit\nUPI Ref No.: 432198765012\nAvailable Balance: Rs.18,250.00\n\nHDFC Bank`;
+  else g('sms-body').value=`INR 750.00 credited to A/c XX4567 on 27-Jun-26 by UPI. UPI Ref:432198765012. Avl Bal:Rs.18250. -HDFC Bank`;
+}
+
+/* ════ TAB 3: E2E Test ══════════════════════════════════════ */
+async function e2eStep1(){
+  const amount=parseFloat(g('e2e-amt').value)||750;
+  e2e.amount=amount;
+  const body={ctx_type:g('e2e-ctx').value,amount,payer_id:v('e2e-payer')||'test.resident',flat_number:v('e2e-flat')||null,member_id:v('e2e-mid')||null,payment_category:v('e2e-cat')||'e2e_test',description:v('e2e-desc')||null,reference:'E2E Test Run',tags:['e2e','test'],expiry_hours:1};
+  const r=await api('POST','/createPayment',body);
+  g('e2e-o1').textContent=JSON.stringify(r.data,null,2);g('e2e-o1').classList.remove('hidden');
+  if(r.ok){
+    e2e.txnId=r.data.transaction_id;g('e2e-rtxn').value=e2e.txnId;
+    g('e2e-b1').innerHTML=sbadge('RECONCILED').replace('RECONCILED','DONE');
+    stepDone(1);stepActive(2);stepDone(2);
+    g('e2e-qr').innerHTML=r.data.upi_qr_data?`<img src="${qrSrc(r.data.upi_qr_data)}" style="width:150px;height:150px;border:2px solid #30363d;border-radius:6px;image-rendering:pixelated">`:'<span class="muted">No QR</span>';
+    g('e2e-qr-det').innerHTML=`<div><span class="muted">TXN: </span><span class="tb" style="font-size:10px">${r.data.transaction_id}</span></div><div><span class="muted">Amount: </span><span class="tg">₹${amount}</span></div><div><span class="muted">Status: </span>${sbadge(r.data.status)}</div>`;
+    g('e2e-email').value=`Dear Customer,\n\nYour HDFC Bank account XX4567 has been credited with Rs.${amount.toFixed(2)} on 27-Jun-2026.\nInfo: UPI-Credit\nUPI Ref No.: 432100000099\nAvailable Balance: Rs.15,000.00\n\nHDFC Bank`;
+    stepActive(3);
+  }else{g('e2e-b1').innerHTML=sbadge('FAILED');}
+}
+async function e2eStep3(){
+  const raw=g('e2e-email').value.trim();if(!raw)return;
+  const r=await api('POST','/parseEmail',{source_type:'EMAIL',raw_text:raw});
+  g('e2e-o3').textContent=JSON.stringify(r.data,null,2);g('e2e-o3').classList.remove('hidden');
+  if(r.ok){e2e.parseId=r.data.parse_id;g('e2e-rparse').value=e2e.parseId;g('e2e-b3').innerHTML=sbadge('RECONCILED').replace('RECONCILED','DONE');stepDone(3);stepActive(4);}
+}
+async function e2eStep4(){
+  if(!e2e.txnId||!e2e.parseId)return alert('Complete Steps 1 and 3 first');
+  const r=await api('PUT',`/reconcile/${e2e.txnId}`,{parse_id:e2e.parseId,matched_by:'e2e_test'});
+  g('e2e-o4').textContent=JSON.stringify(r.data,null,2);g('e2e-o4').classList.remove('hidden');
+  if(r.ok){g('e2e-b4').innerHTML=sbadge(r.data.status);stepDone(4);stepActive(5);}
+}
+async function e2eStep5(){
+  if(!e2e.txnId)return alert('Complete Step 1 first');
+  const r=await api('GET',`/auditTrail/${e2e.txnId}`);
+  g('e2e-o5').textContent=JSON.stringify(r.data,null,2);g('e2e-o5').classList.remove('hidden');
+  if(r.ok)stepDone(5);
+}
+function stepDone(n){const sc=g(`sc${n}`),card=g(`e2e-s${n}`),con=g(`scon${n}`);if(sc){sc.className='step-circle done';sc.textContent='✓';}if(card)card.className='step-card done';if(con)con.className='step-con done';}
+function stepActive(n){const sc=g(`sc${n}`),card=g(`e2e-s${n}`);if(sc)sc.className='step-circle active';if(card)card.className='step-card active';}
+function e2eReset(){
+  e2e.txnId=null;e2e.parseId=null;e2e.amount=null;
+  [1,2,3,4,5].forEach(n=>{const sc=g(`sc${n}`),card=g(`e2e-s${n}`),con=g(`scon${n}`);if(sc){sc.className=n===1?'step-circle active':'step-circle';sc.textContent=n;}if(card)card.className=n===1?'step-card active':'step-card';if(con)con.className='step-con';});
+  g('e2e-qr').innerHTML='<span class="muted">QR will appear after Step 1</span>';g('e2e-qr-det').innerHTML='';
+  g('e2e-rtxn').value='';g('e2e-rparse').value='';
+  [1,2,3,4,5].forEach(n=>{const o=g(`e2e-o${n}`);if(o){o.textContent='';o.classList.add('hidden');}const b=g(`e2e-b${n}`);if(b)b.innerHTML='';});
+}
+
+/* ════ TAB 4: History ══════════════════════════════════════ */
+function initChips(){
+  [['sc-group',v=>{hStatus=v;}],['tc-group',v=>{hType=v;}]].forEach(([gId,setter])=>{
+    document.querySelectorAll(`#${gId} .chip`).forEach(c=>{
+      c.addEventListener('click',()=>{
+        document.querySelectorAll(`#${gId} .chip`).forEach(x=>{x.classList.remove('sel','sel-g','sel-r','sel-y','sel-gr');});
+        c.classList.add(c.dataset.cls||'sel');
+        setter(c.dataset.v);
+      });
+    });
+  });
+}
+async function loadHist(page){
+  hPage=Math.max(1,page||1);
+  const p=new URLSearchParams({page:hPage,limit:20});
+  if(hStatus)p.set('status',hStatus);if(hType)p.set('ctx_type',hType);
+  const search=g('h-search').value.trim();if(search)p.set('search',search);
+  const from=g('h-from').value,to=g('h-to').value;
+  if(from)p.set('from_date',from);if(to)p.set('to_date',to+'T23:59:59');
+  const r=await api('GET',`/transactions?${p}`);
+  if(!r.ok){g('hist-tbody').innerHTML=`<tr><td colspan="9" style="text-align:center;color:#f85149;padding:16px">${r.data.detail||'Error'}</td></tr>`;return;}
+  const{total,items,page:pg,limit}=r.data;
+  const pages=Math.ceil(total/limit);
+  g('h-pinfo').textContent=`Page ${pg} of ${pages} · ${total} total`;
+  g('h-prev').disabled=pg<=1;g('h-next').disabled=pg>=pages;
+  renderHistRows(items);
+}
+function renderHistRows(items){
+  const tb=g('hist-tbody');
+  if(!items.length){tb.innerHTML='<tr><td colspan="9" style="text-align:center;color:#8b949e;padding:24px">No transactions found</td></tr>';return;}
+  tb.innerHTML=items.map(t=>`
+    <tr onclick="toggleExp('${t.transaction_id}')">
+      <td><span class="txn-id-link">${t.transaction_id}</span></td>
+      <td>${t.ctx_type}</td>
+      <td class="tg">₹${parseFloat(t.amount).toFixed(2)}</td>
+      <td>${t.payer_id||'<span class="muted">—</span>'}</td>
+      <td>${t.flat_number||'<span class="muted">—</span>'}</td>
+      <td>${t.payment_category||'<span class="muted">—</span>'}</td>
+      <td>${sbadge(t.status)}</td>
+      <td class="muted">${relTime(t.created_at)}</td>
+      <td>
+        <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();goDetail('${t.transaction_id}')">Detail</button>
+        <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();goAudit('${t.transaction_id}')">Audit</button>
+      </td>
+    </tr>
+    <tr class="exp-row" id="exp-${t.transaction_id}">
+      <td class="exp-cell" colspan="9"><div class="exp-inner" id="exp-in-${t.transaction_id}"><span class="muted">Loading…</span></div></td>
+    </tr>
+  `).join('');
+}
+async function toggleExp(txnId){
+  const row=g(`exp-${txnId}`);
+  if(row.classList.contains('open')){row.classList.remove('open');return;}
+  row.classList.add('open');
+  const inner=g(`exp-in-${txnId}`);
+  const r=await api('GET',`/transactions/${txnId}`);
+  if(!r.ok){inner.textContent='Error: '+JSON.stringify(r.data);return;}
+  const d=r.data;
+  const md=d.payment_metadata?`<div><span class="kv-k">Metadata: </span><span class="kv-v" style="font-size:10px">${JSON.stringify(d.payment_metadata)}</span></div>`:'';
+  inner.innerHTML=`<div class="exp-grid"><div class="kv-line">
+    <div><span class="kv-k">TXN ID: </span><span class="kv-v tb" style="font-size:10px">${d.transaction_id}</span></div>
+    <div><span class="kv-k">Status: </span>${sbadge(d.status)}</div>
+    <div><span class="kv-k">Amount: </span><span class="kv-v tg">₹${parseFloat(d.amount).toFixed(2)} ${d.currency}</span></div>
+    <div><span class="kv-k">Payer: </span><span class="kv-v">${d.payer_id||'—'}</span></div>
+    <div><span class="kv-k">Flat: </span><span class="kv-v">${d.flat_number||'—'}</span></div>
+    <div><span class="kv-k">Member: </span><span class="kv-v">${d.member_id||'—'}</span></div>
+    <div><span class="kv-k">Version: </span><span class="kv-v">${d.version_number}</span></div>
+  </div><div class="kv-line">
+    <div><span class="kv-k">Category: </span><span class="kv-v">${d.payment_category||'—'}</span></div>
+    <div><span class="kv-k">Reference: </span><span class="kv-v">${d.reference||'—'}</span></div>
+    <div><span class="kv-k">Description: </span><span class="kv-v">${d.description||'—'}</span></div>
+    <div><span class="kv-k">Tags: </span><span class="kv-v">${d.tags?d.tags.join(', '):'—'}</span></div>
+    <div><span class="kv-k">Notify Email: </span><span class="kv-v">${d.notify_email||'—'}</span></div>
+    <div><span class="kv-k">Created By: </span><span class="kv-v">${d.created_by||'—'}</span></div>
+    <div><span class="kv-k">Expiry: </span><span class="kv-v">${d.expiry_at?new Date(d.expiry_at).toLocaleString():'—'}</span></div>
+    <div><span class="kv-k">Error: </span><span class="kv-v" style="color:#f85149">${d.error_code||'—'}</span></div>
+    ${md}
+  </div></div>
+  ${d.upi_qr_data?`<img src="${qrSrc(d.upi_qr_data)}" style="width:80px;height:80px;border:2px solid #30363d;border-radius:4px;image-rendering:pixelated">`:''}`
+  ;
+}
+function goDetail(txnId){
+  switchTab('pay');lastTxnId=txnId;
+  api('GET',`/transactions/${txnId}`).then(r=>{
+    if(r.ok){showResp('p-resp',r.data);g('p-resp-meta').innerHTML='<span class="http-ok">200</span>';g('p-resp-meta').classList.remove('hidden');if(r.data.upi_qr_data)renderQR(r.data);g('p-audit-txn').textContent=txnId;g('p-audit-card').style.display='';loadPayAudit();}
+  });
+}
+function goAudit(txnId){switchTab('email');g('rec-txn').value=txnId;g('audit-txn').value=txnId;loadAudit();}
+
+/* ════ API HELPER ══════════════════════════════════════════ */
+async function api(method,path,body){
+  const headers={'Content-Type':'application/json'};
+  if(token)headers['Authorization']=`Bearer ${token}`;
+  try{
+    const opts={method,headers};
+    if(body&&method!=='GET')opts.body=JSON.stringify(body);
+    const r=await fetch(path,opts);
+    const data=await r.json().catch(()=>({}));
+    return{ok:r.ok,status:r.status,data};
+  }catch(e){return{ok:false,status:0,data:{detail:e.message}};}
+}
+
+/* ════ UI HELPERS ══════════════════════════════════════════ */
+const g=id=>document.getElementById(id);
+const v=id=>{const e=g(id);return e?e.value.trim():'';};
+function sbadge(s){return `<span class="sb s-${s}">${s.replace('_',' ')}</span>`;}
+function relTime(iso){const d=Date.now()-new Date(iso).getTime();if(d<60000)return 'just now';if(d<3600000)return Math.floor(d/60000)+'m ago';if(d<86400000)return Math.floor(d/3600000)+'h ago';return Math.floor(d/86400000)+'d ago';}
+function showAlert(elId,cls,msg){const e=g(elId);e.className=`inline-alert ${cls}`;e.textContent=msg;}
+function respMeta(elId,status,ms){const e=g(elId),ok=status>=200&&status<300;e.innerHTML=`<span class="${ok?'http-ok':'http-err'}">${status}</span> <span class="muted">${ms}ms</span>`;e.classList.remove('hidden');}
+function showResp(elId,data){const e=g(elId);e.textContent=JSON.stringify(data,null,2);e.classList.remove('hidden');}
+function switchTab(name){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active',p.id===`panel-${name}`));
+  if(name==='hist'){loadHist(1);loadParseHist(1);}
+  if(name==='channels'){loadChannels();loadTestChannels();}
+}
+
+/* ════ CHANNELS ════════════════════════════════════════════ */
+function csvToList(str){return str.split(',').map(s=>s.trim()).filter(Boolean);}
+
+function onProviderChange(){
+  const p=g('ch-provider').value;
+  if(p==='GMAIL_IMAP'){g('ch-host').value='imap.gmail.com';g('ch-port').value='993';g('ch-ssl').checked=true;}
+  else if(p==='IMAP'){g('ch-host').value='';g('ch-port').value='993';}
+}
+
+function chPreset(type){
+  if(type==='gmail'){
+    g('ch-provider').value='GMAIL_IMAP';g('ch-host').value='imap.gmail.com';
+    g('ch-port').value='993';g('ch-ssl').checked=true;
+    g('ch-subj').value='UPI, credited, debited, transaction, payment';
+    g('ch-body-kw').value='credited, UPI Ref, debited';
+    g('ch-interval').value='60';
+  } else if(type==='hdfc'){
+    g('ch-from').value='alerts@hdfcbank.net, noreply@hdfcbank.net';
+    g('ch-subj').value='UPI, credited, debited';
+    g('ch-body-kw').value='credited, UPI Ref, HDFC';
+  }
+}
+
+function togglePassVis(){
+  const el=g('ch-pass');
+  el.type=el.type==='password'?'text':'password';
+}
+
+function chReset(){
+  g('ch-id').value='';
+  ['ch-name','ch-user','ch-pass','ch-from','ch-subj','ch-body-kw'].forEach(i=>g(i).value='');
+  g('ch-provider').value='GMAIL_IMAP';
+  g('ch-host').value='imap.gmail.com';g('ch-port').value='993';
+  g('ch-ssl').checked=true;g('ch-active').checked=true;
+  g('ch-interval').value='60';
+  g('ch-form-title').textContent='Add Email Channel';
+  g('ch-del-btn').style.display='none';
+  g('ch-form-alert').className='hidden';
+}
+
+function chEditLoad(ch){
+  g('ch-id').value=ch.id||'';
+  g('ch-name').value=ch.name||'';
+  g('ch-provider').value=ch.provider||'GMAIL_IMAP';
+  g('ch-active').checked=ch.is_active!==false;
+  g('ch-interval').value=ch.polling_interval_seconds||60;
+  // filter rules
+  const fr=ch.filter_rules||{};
+  g('ch-from').value=(fr.from_filter||[]).join(', ');
+  g('ch-subj').value=(fr.subject_keywords||[]).join(', ');
+  g('ch-body-kw').value=(fr.body_keywords||[]).join(', ');
+  // credentials not returned by API for security — user must re-enter password to update
+  g('ch-host').value='';g('ch-port').value='993';g('ch-ssl').checked=true;g('ch-user').value='';g('ch-pass').value='';
+  g('ch-form-title').textContent=`Edit Channel — ${ch.name}`;
+  g('ch-del-btn').style.display='';
+  document.getElementById('panel-channels').querySelector('.card:last-child').scrollIntoView({behavior:'smooth'});
+}
+
+async function loadChannels(){
+  const r=await api('GET','/channels');
+  const tb=g('ch-tbody');
+  if(!r.ok){
+    g('ch-list-alert').className='inline-alert a-err';g('ch-list-alert').textContent=r.data.detail||'Failed to load channels';g('ch-list-alert').classList.remove('hidden');
+    return;
+  }
+  g('ch-list-alert').className='hidden';
+  if(!r.data.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:#8b949e;padding:20px">No channels configured yet — add one below</td></tr>';return;}
+  tb.innerHTML=r.data.map(ch=>{
+    const last=ch.last_polled_at?relTime(ch.last_polled_at):'Never';
+    const active=ch.is_active
+      ?'<span class="sb" style="background:#1a2e1a;color:#3fb950;border:1px solid #2d5a27">Active</span>'
+      :'<span class="sb" style="background:#21262d;color:#8b949e;border:1px solid #30363d">Paused</span>';
+    return `<tr>
+      <td>${ch.name}</td><td>${ch.provider}</td><td>${ch.channel_type}</td>
+      <td>${ch.polling_interval_seconds}s</td><td class="muted">${last}</td>
+      <td>${active}</td>
+      <td>
+        <button class="btn btn-secondary btn-sm" onclick='chEditLoad(${JSON.stringify(ch)})'>Edit</button>
+        <button class="btn btn-secondary btn-sm" onclick="chToggle('${ch.id}',${!ch.is_active})">${ch.is_active?'Pause':'Resume'}</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function saveChannel(){
+  const id=g('ch-id').value;
+  const name=v('ch-name'),user=v('ch-user'),pass=v('ch-pass');
+  if(!name)return showAlert('ch-form-alert','a-err','Channel name is required');
+
+  const filter_rules={
+    from_filter:csvToList(v('ch-from')),
+    subject_keywords:csvToList(v('ch-subj')),
+    body_keywords:csvToList(v('ch-body-kw')),
+    has_attachment:null,
+  };
+
+  if(id){
+    // PATCH — only send credentials if password was re-entered
+    const body={
+      name,
+      filter_rules,
+      polling_interval_seconds:parseInt(g('ch-interval').value)||60,
+      is_active:g('ch-active').checked,
+    };
+    if(user&&pass){
+      body.credentials={
+        host:v('ch-host')||'imap.gmail.com',
+        port:parseInt(g('ch-port').value)||993,
+        username:user,password:pass,
+        use_ssl:g('ch-ssl').checked,
+      };
+    }
+    const r=await api('PATCH',`/channels/${id}`,body);
+    if(r.ok){showAlert('ch-form-alert','a-ok','✓ Channel updated');loadChannels();loadTestChannels();}
+    else showAlert('ch-form-alert','a-err',r.data.detail||JSON.stringify(r.data));
+  } else {
+    // POST — credentials required
+    if(!user||!pass)return showAlert('ch-form-alert','a-err','Email and password are required');
+    const body={
+      name,
+      channel_type:'EMAIL',
+      provider:g('ch-provider').value,
+      credentials:{
+        host:v('ch-host')||'imap.gmail.com',
+        port:parseInt(g('ch-port').value)||993,
+        username:user,password:pass,
+        use_ssl:g('ch-ssl').checked,
+      },
+      filter_rules,
+      polling_interval_seconds:parseInt(g('ch-interval').value)||60,
+    };
+    const r=await api('POST','/channels',body);
+    if(r.ok){showAlert('ch-form-alert','a-ok',`✓ Channel created — monitor will poll ${user} every ${body.polling_interval_seconds}s`);chReset();loadChannels();loadTestChannels();}
+    else showAlert('ch-form-alert','a-err',r.data.detail||JSON.stringify(r.data));
+  }
+}
+
+async function deleteChannel(){
+  const id=g('ch-id').value;if(!id)return;
+  if(!confirm('Delete this channel? The monitor will stop polling it immediately.'))return;
+  const r=await api('DELETE',`/channels/${id}`);
+  if(r.ok||r.status===204){showAlert('ch-form-alert','a-ok','Channel deleted');chReset();loadChannels();loadTestChannels();}
+  else showAlert('ch-form-alert','a-err',r.data.detail||'Failed');
+}
+
+async function chToggle(id,active){
+  await api('PATCH',`/channels/${id}`,{is_active:active});
+  loadChannels();
+}
+
+/* ════ PARSE HISTORY ═══════════════════════════════════════ */
+let phPage=1;
+
+// Wire chip groups once DOM is ready (called from INIT)
+function initPhChips(){
+  ['ph-src-group','ph-rec-group'].forEach(gid=>{
+    const grp=g(gid);if(!grp)return;
+    grp.querySelectorAll('.chip').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        grp.querySelectorAll('.chip').forEach(b=>{b.classList.remove('sel','sel-y','sel-g','sel-r');});
+        btn.classList.add(btn.dataset.cls||'sel');
+        loadParseHist(1);
+      });
+    });
+  });
+}
+
+function _phFilter(groupId){
+  const el=document.querySelector(`#${groupId} .chip.sel,#${groupId} .chip.sel-y,#${groupId} .chip.sel-g`);
+  return el?el.dataset.v:'';
+}
+
+async function loadParseHist(page){
+  phPage=page;
+  const src=_phFilter('ph-src-group');
+  const rec=_phFilter('ph-rec-group');
+  const search=v('ph-search');
+  const params=new URLSearchParams({page,limit:20});
+  if(src)params.set('source_type',src);
+  if(rec!=='')params.set('is_reconciled',rec);
+  if(search)params.set('search',search);
+
+  const r=await api('GET',`/parsedTransactions?${params}`);
+  const tb=g('ph-tbody');
+  if(!r.ok){
+    tb.innerHTML=`<tr><td colspan="8" style="text-align:center;color:#f85149;padding:16px">${r.data.detail||'Error loading parse history'}</td></tr>`;
+    return;
+  }
+  const {total,items}=r.data;
+  if(!items.length){
+    tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#8b949e;padding:24px">No parse records found</td></tr>';
+    g('ph-pinfo').textContent='0 records';
+    g('ph-prev').disabled=true;g('ph-next').disabled=true;
+    return;
+  }
+
+  const srcColors={EMAIL:'#58a6ff',IMAGE:'#d29922',SMS:'#3fb950'};
+  tb.innerHTML=items.map(r=>{
+    const sc={credited:'#3fb950',debited:'#f85149',success:'#3fb950',failed:'#f85149',null:'#8b949e'}[r.extracted_status]||'#8b949e';
+    const srcColor=srcColors[r.source_type]||'#8b949e';
+    const amt=r.extracted_amount!=null?`₹ ${Number(r.extracted_amount).toLocaleString('en-IN')}`:'—';
+    const ref=r.extracted_upi_ref||'—';
+    const bank=r.extracted_bank||'—';
+    const st=r.extracted_status||'—';
+    const recBadge=r.is_reconciled
+      ?'<span class="sb" style="background:#1a2e1a;color:#3fb950;border:1px solid #2d5a27">✓ Yes</span>'
+      :'<span class="sb" style="background:#2a1f00;color:#d29922;border:1px solid #5a3e00">Pending</span>';
+
+    // Build debug info from extracted_data
+    const ed=r.extracted_data||{};
+    const method=ed.parse_method||ed.method||'';
+    const hint=ed.parse_hint||'';
+    const verdict=ed.verification_verdict||'';
+    const searchTerm=ed.search_term||'';
+    const filename=ed.source_filename||'';
+    const debugLines=[];
+    if(method)debugLines.push(`method: ${method}`);
+    if(filename)debugLines.push(`file: ${filename}`);
+    if(verdict)debugLines.push(`verdict: ${verdict}`);
+    if(searchTerm)debugLines.push(`searched: ${searchTerm}`);
+    if(hint)debugLines.push(`hint: ${hint.slice(0,60)}…`);
+    const debugHtml=debugLines.length
+      ?`<details><summary style="font-size:10px;color:#58a6ff;cursor:pointer">debug ▶</summary>
+          <pre style="font-size:9px;color:#8b949e;white-space:pre-wrap;background:#161b22;padding:6px;border-radius:4px;margin:4px 0 0;max-width:320px">${escHtml(JSON.stringify(r.extracted_data,null,2))}</pre>
+        </details>`
+      :'—';
+
+    return `<tr>
+      <td class="muted" style="font-size:10px;white-space:nowrap">${relTime(r.parsed_at)}<br><span style="font-size:9px">${r.id.slice(0,8)}…</span></td>
+      <td><span class="sb" style="background:#21262d;color:${srcColor};border:1px solid #30363d">${r.source_type}</span></td>
+      <td style="font-weight:600;color:#3fb950">${amt}</td>
+      <td style="font-family:monospace;font-size:11px;color:#58a6ff">${escHtml(ref)}</td>
+      <td class="muted">${escHtml(bank)}</td>
+      <td style="color:${sc}">${st}</td>
+      <td>${recBadge}</td>
+      <td>${debugHtml}</td>
+    </tr>`;
+  }).join('');
+
+  const totalPages=Math.ceil(total/20);
+  g('ph-pinfo').textContent=`Page ${page}/${totalPages} · ${total} record${total!==1?'s':''}`;
+  g('ph-prev').disabled=page<=1;
+  g('ph-next').disabled=page>=totalPages;
+}
+
+/* ════ EMAIL TEST PARSE ════════════════════════════════════ */
+function testSourceChange(){
+  const saved=document.querySelector('input[name="test-src"]:checked').value==='saved';
+  g('test-saved-src').style.display=saved?'':'none';
+  g('test-custom-src').style.display=saved?'none':'';
+}
+
+async function loadTestChannels(){
+  const r=await api('GET','/channels');
+  if(!r.ok)return;
+  const sel=g('test-channel-id');
+  const prev=sel.value;
+  sel.innerHTML='<option value="">— select a saved channel —</option>';
+  r.data.forEach(ch=>{
+    const o=document.createElement('option');
+    o.value=ch.id;
+    o.textContent=`${ch.name} (${ch.provider})${ch.is_active?'':' [paused]'}`;
+    sel.appendChild(o);
+  });
+  if(prev)sel.value=prev;
+  // Also populate the image verify channel dropdown
+  loadImgChannels(r.data);
+}
+
+function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+const _TEST_HINTS={
+  bank:'This is a bank transaction notification email (e.g. HDFC InstaAlerts, SBI, ICICI). Extract the credited/debited amount (look for "Rs." or "INR"), the UPI Reference Number (labeled "UPI Reference No." or "UTR" — a 10-15 digit number), the sender VPA if present, and the transaction status.',
+  maintenance:'This email is about a society maintenance fee or utility bill payment. Look for the amount paid, any UPI Reference Number or transaction ID, payment date, and whether the payment was confirmed or failed.',
+  refund:'This is a refund or reversal confirmation email. Extract the refunded amount, the original UPI Reference Number or UTR if present, the bank name, and the refund status (credited/success).',
+  upi:'This is a UPI payment notification email from a bank. Extract the transferred amount, the UPI Reference Number (10-15 digit UTR), the sender VPA (e.g. 9884930229@axl), bank name, and whether the amount was credited or debited to the account.',
+};
+function setTestHint(key){
+  g('test-parse-hint').value=key?(_TEST_HINTS[key]||''):'';
+}
+
+function renderTestResults(data,ms){
+  const {fetched,ollama_model,parse_hint,results}=data;
+  const hintLabel=parse_hint?` · hint active`:'';
+  g('test-results-meta').textContent=`${fetched} email${fetched!==1?'s':''} matched · model: ${ollama_model}${hintLabel} · ${ms}ms`;
+
+  if(!fetched){
+    g('test-results-body').innerHTML=`<div class="inline-alert a-warn">
+      No emails matched your filters.
+      <ul style="margin:6px 0 0 18px;font-size:11px;line-height:2">
+        <li>Try removing the search phrase to see all recent emails</li>
+        <li>Make sure "Include already-read emails" is checked</li>
+        <li>Loosen or remove the From Address filter</li>
+        <li>Increase "Max emails" to cast a wider net</li>
+      </ul>
+    </div>`;
+    g('test-results-wrap').style.display='';
+    return;
+  }
+
+  const statusColors={credited:'#3fb950',debited:'#f85149',failed:'#f85149'};
+
+  g('test-results-body').innerHTML=results.map((r)=>{
+    const ex=r.ollama_result||{};
+    const sc=statusColors[ex.status]||'#8b949e';
+    const amtBadge=ex.amount!=null
+      ?`<span class="sb" style="background:#1a2e1a;color:#3fb950;border:1px solid #2d5a27;font-size:12px;padding:3px 8px">₹ ${Number(ex.amount).toLocaleString('en-IN')}</span>`:'';
+    const refBadge=ex.upi_ref
+      ?`<span class="sb" style="background:#162032;color:#58a6ff;border:1px solid #1f3a5f">UPI: ${escHtml(ex.upi_ref)}</span>`:'';
+    const bankBadge=ex.bank
+      ?`<span class="sb" style="background:#21262d;color:#e6edf3;border:1px solid #30363d">${escHtml(ex.bank)}</span>`:'';
+    const stBadge=ex.status
+      ?`<span class="sb" style="background:#21262d;color:${sc};border:1px solid #30363d">${ex.status}</span>`:'';
+    const tsBadge=ex.timestamp
+      ?`<span class="sb muted" style="font-size:10px">${escHtml(ex.timestamp)}</span>`:'';
+    const attBadge=r.has_attachment
+      ?`<span class="sb" style="background:#2a1f00;color:#d29922;border:1px solid #5a3e00">📎 ${r.attachment_names.join(', ')||'attachment'}</span>`:'';
+    const noEx=ex.amount==null&&!ex.upi_ref&&!ex.status;
+
+    return `<div style="border:1px solid #21262d;border-radius:6px;padding:14px;margin-bottom:12px;background:#0d1117">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <div>
+          <div style="font-size:11px;color:#8b949e">From: <span style="color:#e6edf3;font-weight:600">${escHtml(r.from||'—')}</span></div>
+          <div style="font-size:13px;font-weight:600;color:#e6edf3;margin-top:3px">${escHtml(r.subject||'(no subject)')}</div>
+          <div style="font-size:10px;color:#8b949e;margin-top:2px">${escHtml(r.date||'')}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${attBadge}</div>
+      </div>
+
+      <div style="margin-bottom:10px">
+        <div style="font-size:11px;color:#8b949e;margin-bottom:5px">Ollama Extraction <span style="color:#3fb950">(${ollama_model})</span></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          ${noEx
+            ? '<span class="sb" style="background:#21262d;color:#8b949e;border:1px solid #30363d">No payment data found in this email</span>'
+            : `${amtBadge}${refBadge}${bankBadge}${stBadge}${tsBadge}`}
+        </div>
+      </div>
+
+      <details style="margin-bottom:6px">
+        <summary style="font-size:11px;color:#58a6ff;cursor:pointer;user-select:none">▶ Raw email body (first 500 chars)</summary>
+        <pre style="margin:6px 0 0;font-size:10px;color:#8b949e;white-space:pre-wrap;background:#161b22;padding:10px;border-radius:4px;max-height:200px;overflow:auto;border:1px solid #21262d">${escHtml(r.body_preview||'(empty)')}</pre>
+      </details>
+      <details>
+        <summary style="font-size:11px;color:#58a6ff;cursor:pointer;user-select:none">▶ Full Ollama JSON response</summary>
+        <pre style="margin:6px 0 0;font-size:10px;color:#3fb950;white-space:pre-wrap;background:#0a1628;padding:10px;border-radius:4px;border:1px solid #1f3a5f">${escHtml(JSON.stringify(ex,null,2))}</pre>
+      </details>
+      ${parse_hint?`<details>
+        <summary style="font-size:11px;color:#8b949e;cursor:pointer;user-select:none">▶ Context hint sent to Ollama</summary>
+        <pre style="margin:6px 0 0;font-size:10px;color:#d29922;white-space:pre-wrap;background:#1a1200;padding:10px;border-radius:4px;border:1px solid #5a3e00">${escHtml(parse_hint)}</pre>
+      </details>`:''}
+    </div>`;
+  }).join('');
+
+  g('test-results-wrap').style.display='';
+}
+
+async function testEmailParse(){
+  const isSaved=document.querySelector('input[name="test-src"]:checked').value==='saved';
+  const body={
+    search_phrase:v('test-phrase')||null,
+    from_filter:v('test-from')||null,
+    parse_hint:v('test-parse-hint')||null,
+    limit:parseInt(g('test-limit').value)||5,
+    include_seen:g('test-include-seen').checked,
+    mark_seen:g('test-mark-seen').checked,
+  };
+
+  if(isSaved){
+    const chId=v('test-channel-id');
+    if(!chId)return showAlert('test-alert','a-err','Please select a saved channel, or switch to "Enter credentials manually"');
+    body.channel_id=chId;
+  } else {
+    const user=v('test-user'),pass=v('test-pass');
+    if(!user||!pass)return showAlert('test-alert','a-err','Email and password are required');
+    body.host=v('test-host')||'imap.gmail.com';
+    body.port=parseInt(g('test-port').value)||993;
+    body.username=user;
+    body.password=pass;
+    body.use_ssl=g('test-ssl').checked;
+  }
+
+  const btn=g('test-fetch-btn');
+  btn.disabled=true;btn.textContent='⏳ Connecting to IMAP…';
+  g('test-alert').className='hidden';
+  g('test-results-wrap').style.display='none';
+
+  const t0=Date.now();
+  const r=await api('POST','/channels/test-fetch',body);
+  const ms=Date.now()-t0;
+
+  btn.disabled=false;btn.textContent='🔍 Fetch & Parse with Ollama';
+
+  if(!r.ok){
+    const detail=r.data?.detail||JSON.stringify(r.data);
+    showAlert('test-alert','a-err',`Error: ${detail}`);
+    return;
+  }
+
+  showAlert('test-alert','a-ok',`✓ Fetched ${r.data.fetched} email(s) in ${ms}ms`);
+  renderTestResults(r.data,ms);
+}
+
+function clearTestResults(){
+  g('test-results-wrap').style.display='none';
+  g('test-results-body').innerHTML='';
+  g('test-alert').className='hidden';
+}
+
+/* ════ IMAGE PARSE ═════════════════════════════════════════ */
+const _IMG_HINTS={
+  upi:'This is a UPI payment success screenshot. Extract the amount and the bank UTR / UPI Reference Number (a 10-15 digit number — NOT the payment app internal ID). The UTR is what the receiving bank uses in its notification email.',
+  phonepay:'This is a PhonePe UPI payment success screenshot. Extract the exact amount sent — read the decimal point carefully (₹1.00 is ONE rupee = 1.0, NOT 100). Extract the bank UTR labeled "UTR:" — a 12-digit number like 586264656963. Do NOT use the PhonePe Transaction ID (starts with T). Extract status (success/failed).',
+  gpay:'This is a Google Pay payment receipt. Extract the amount sent and the UPI transaction ID / Reference No. shown on the receipt. Also extract the status (success/failed). The reference number is the bank UTR, not Google Pay\'s internal order ID.',
+  bank:'This is a bank app transaction receipt or notification screenshot. Extract the transaction amount, the UPI Reference Number (labeled UPI Ref No., UTR, or Reference No. — numeric digits), bank name, and status (credited/debited).',
+};
+function setImgHint(key){g('img-parse-hint').value=_IMG_HINTS[key]||'';}
+
+let _imgParseId=null; // parse_id from the last successful extraction
+
+function onImgFileChange(input){
+  if(input.files&&input.files[0])loadImgPreview(input.files[0]);
+}
+function onImgDrop(event){
+  const f=event.dataTransfer.files[0];
+  if(f)loadImgPreview(f);
+}
+function loadImgPreview(file){
+  g('img-placeholder').style.display='none';
+  const preview=g('img-preview');
+  preview.style.display='block';
+  const reader=new FileReader();
+  reader.onload=e=>{preview.src=e.target.result;};
+  reader.readAsDataURL(file);
+  g('img-file-info').style.display='';
+  g('img-file-info').textContent=`${file.name}  ·  ${(file.size/1024).toFixed(0)} KB  ·  ${file.type||'image'}`;
+  g('img-clear-file-btn').style.display='';
+  g('img-alert').className='hidden';
+  g('img-results-wrap').style.display='none';
+  _imgParseId=null;
+  // Show verify button only if a channel is selected
+  _updateImgBtns();
+}
+function _updateImgBtns(){
+  const hasCh=v('img-channel-id')!=='';
+  g('img-verify-btn').style.display=hasCh?'':'none';
+}
+function clearImageUpload(){
+  g('img-file').value='';
+  g('img-preview').style.display='none';g('img-preview').src='';
+  g('img-placeholder').style.display='';
+  g('img-file-info').style.display='none';
+  g('img-clear-file-btn').style.display='none';
+  g('img-alert').className='hidden';
+  g('img-results-wrap').style.display='none';
+  g('img-setup-result').style.display='none';
+  g('img-manual-utr').style.borderColor='';
+  g('img-manual-amount').style.borderColor='';
+  _imgParseId=null;
+}
+
+function loadImgChannels(channels){
+  const sel=g('img-channel-id');
+  const prev=sel.value;
+  sel.innerHTML='<option value="">— skip email cross-check (extract only) —</option>';
+  (channels||[]).forEach(ch=>{
+    const o=document.createElement('option');
+    o.value=ch.id;
+    o.textContent=`${ch.name} (${ch.provider})${ch.is_active?'':' [paused]'}`;
+    sel.appendChild(o);
+  });
+  if(prev)sel.value=prev;
+  sel.onchange=_updateImgBtns;
+}
+
+async function _imgApiCall(path, formData){
+  const headers={};
+  if(token)headers['Authorization']=`Bearer ${token}`;
+  try{
+    const resp=await fetch(path,{method:'POST',headers,body:formData});
+    const data=await resp.json().catch(()=>({}));
+    return{ok:resp.ok,status:resp.status,data};
+  }catch(e){return{ok:false,status:0,data:{detail:e.message}};}
+}
+
+function _buildImgForm(){
+  const fileInput=g('img-file');
+  if(!fileInput.files||!fileInput.files[0])return null;
+  const fd=new FormData();
+  fd.append('file',fileInput.files[0]);
+  const hint=v('img-parse-hint');
+  if(hint)fd.append('parse_hint',hint);
+  // Attach manual override values if set — backend uses them as fallback
+  const utr=v('img-manual-utr').trim();
+  const amt=v('img-manual-amount').trim();
+  if(utr)fd.append('manual_upi_ref',utr);
+  if(amt)fd.append('manual_amount',amt);
+  return fd;
+}
+
+function onManualOverrideChange(){
+  const utr=v('img-manual-utr').trim();
+  const amt=v('img-manual-amount').trim();
+  g('img-manual-active-notice').style.display=(utr||amt)?'':'none';
+}
+
+async function checkImgSetup(){
+  const btn=g('img-setup-btn');
+  btn.disabled=true;btn.textContent='⏳ Checking…';
+  const wrap=g('img-setup-result');
+  wrap.style.display='';wrap.innerHTML='<span class="muted" style="font-size:11px">Checking setup…</span>';
+  try{
+    const headers={};
+    if(token)headers['Authorization']=`Bearer ${token}`;
+    const resp=await fetch('/setupCheck',{headers});
+    const d=await resp.json();
+    const ollama=d.ollama||{};const ocr=d.pytesseract||{};
+    const ok=v=>v?'<span style="color:#3fb950">✓</span>':'<span style="color:#f85149">✗</span>';
+    const recs=(d.recommendations||[]).map(r=>`<li style="color:#d29922;margin:2px 0">${escHtml(r)}</li>`).join('');
+    wrap.innerHTML=`
+      <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:12px;font-size:11px">
+        <div style="font-weight:600;margin-bottom:8px;color:#e6edf3">Image Extraction Setup ${d.setup_ok?'<span style="color:#3fb950">— READY</span>':'<span style="color:#f85149">— ACTION NEEDED</span>'}</div>
+        <table style="width:100%;border-collapse:collapse">
+          <tr><td style="color:#8b949e;padding:2px 0;width:160px">Ollama running</td><td>${ok(ollama.running)} ${ollama.running?'':'<span class="muted">'+escHtml(ollama.error||'')+'</span>'}</td></tr>
+          <tr><td style="color:#8b949e;padding:2px 0">Vision model (llava)</td><td>${ok(ollama.llava_pulled)} ${ollama.llava_pulled?escHtml(ollama.vision_model_configured||'llava'):'not pulled'}</td></tr>
+          <tr><td style="color:#8b949e;padding:2px 0">Available models</td><td style="color:#58a6ff;font-family:monospace;font-size:10px">${escHtml((ollama.models||[]).join(', ')||'none')}</td></tr>
+          <tr><td style="color:#8b949e;padding:2px 0">pytesseract (OCR)</td><td>${ok(ocr.installed)} ${ocr.installed?'v'+escHtml(ocr.version||''):escHtml(ocr.error||'not installed')}</td></tr>
+        </table>
+        ${recs?`<ul style="margin:10px 0 0;padding-left:16px">${recs}</ul>`:''}
+        ${!d.setup_ok?`<div style="margin-top:10px;padding:8px;background:#2a1f00;border:1px solid #5a3e00;border-radius:4px;color:#d29922;font-size:11px">
+          <strong>Quick fix:</strong> Run <code style="background:#0a1628;padding:2px 4px;border-radius:3px;color:#58a6ff">ollama pull llava</code> in your terminal, then reload and retry.<br>
+          Or use <strong>Manual Override</strong> above — type the UTR from your PhonePe/GPay screenshot directly.
+        </div>`:''}
+      </div>`;
+  }catch(e){wrap.innerHTML=`<div class="inline-alert a-err" style="font-size:11px">Setup check failed: ${escHtml(e.message)}</div>`;}
+  btn.disabled=false;btn.textContent='🔧 Check Setup';
+}
+
+async function parseImageUpload(){
+  const fd=_buildImgForm();
+  if(!fd)return showAlert('img-alert','a-err','Please upload a payment screenshot first');
+
+  const btn=g('img-parse-btn');
+  btn.disabled=true;btn.textContent='⏳ Analysing…';
+  g('img-alert').className='hidden';g('img-results-wrap').style.display='none';
+
+  const t0=Date.now();
+  const r=await _imgApiCall('/parseImage',fd);
+  const ms=Date.now()-t0;
+  btn.disabled=false;btn.textContent='🤖 Extract with Ollama';
+
+  if(!r.ok)return showAlert('img-alert','a-err',r.data.detail||JSON.stringify(r.data));
+  _imgParseId=r.data.parse_id;
+  showAlert('img-alert','a-ok',`✓ Extracted in ${ms}ms`);
+  renderImgResult(r.data,ms);
+}
+
+async function verifyPaymentScreenshot(){
+  const chId=v('img-channel-id');
+  if(!chId)return showAlert('img-alert','a-err','Select a Gmail channel first');
+  const fd=_buildImgForm();
+  if(!fd)return showAlert('img-alert','a-err','Please upload a payment screenshot first');
+
+  fd.append('channel_id',chId);
+  fd.append('search_days',g('img-search-days').value||'3');
+  const txnId=v('img-txn-id');
+  if(txnId)fd.append('txn_id',txnId);
+
+  const btn=g('img-verify-btn');
+  btn.disabled=true;btn.textContent='⏳ Searching Gmail…';
+  g('img-alert').className='hidden';g('img-results-wrap').style.display='none';
+
+  const t0=Date.now();
+  const r=await _imgApiCall('/verifyPaymentScreenshot',fd);
+  const ms=Date.now()-t0;
+  btn.disabled=false;btn.textContent='✅ Verify & Cross-check Gmail';
+
+  if(!r.ok)return showAlert('img-alert','a-err',r.data.detail||JSON.stringify(r.data));
+  _imgParseId=r.data.screenshot?.parse_id||null;
+  renderVerifyResult(r.data,ms);
+}
+
+const _verdictCfg={
+  CONFIRMED:    {bg:'#1a2e1a',color:'#3fb950',border:'#2d5a27',icon:'✅'},
+  PENDING:      {bg:'#2a1f00',color:'#d29922',border:'#5a3e00',icon:'⏳'},
+  AMOUNT_MISMATCH:{bg:'#2d1a1a',color:'#f85149',border:'#5a2020',icon:'⚠️'},
+  EMAIL_NOT_FOUND:{bg:'#21262d',color:'#8b949e',border:'#30363d',icon:'📭'},
+  NO_UPI_REF:   {bg:'#21262d',color:'#8b949e',border:'#30363d',icon:'❓'},
+  EXTRACTION_FAILED:{bg:'#2d1a1a',color:'#f85149',border:'#5a2020',icon:'❌'},
+};
+const _methodLabel={
+  'ollama_vision':'Ollama vision (llava)',
+  'ocr+ollama':'OCR → Ollama text',
+  'ocr+regex':'OCR → regex fallback',
+  'manual_entry':'Manual entry (override)',
+  'failed':'extraction failed',
+};
+
+function renderImgResult(d,ms){
+  const method=d.extracted_data?.parse_method||'unknown';
+  const mLabel=_methodLabel[method]||method;
+  const sc={credited:'#3fb950',debited:'#f85149',success:'#3fb950',failed:'#f85149'}[d.extracted_status]||'#8b949e';
+  const amtB=d.extracted_amount!=null?`<span class="sb" style="background:#1a2e1a;color:#3fb950;border:1px solid #2d5a27;font-size:13px;padding:4px 10px">₹ ${Number(d.extracted_amount).toLocaleString('en-IN')}</span>`:'';
+  const refB=d.extracted_upi_ref?`<span class="sb" style="background:#162032;color:#58a6ff;border:1px solid #1f3a5f">UPI: ${escHtml(d.extracted_upi_ref)}</span>`:'';
+  const bankB=d.extracted_bank?`<span class="sb" style="background:#21262d;color:#e6edf3;border:1px solid #30363d">${escHtml(d.extracted_bank)}</span>`:'';
+  const stB=d.extracted_status?`<span class="sb" style="color:${sc};background:#21262d;border:1px solid #30363d">${d.extracted_status}</span>`:'';
+  const tsB=d.extracted_timestamp?`<span class="sb muted" style="font-size:10px">${escHtml(d.extracted_timestamp)}</span>`:'';
+  const noEx=d.extracted_amount==null&&!d.extracted_upi_ref&&!d.extracted_status;
+  const isFailed=method==='failed';
+  const ed=d.extracted_data||{};
+  const vErr=ed.vision_error?`Vision: ${escHtml(ed.vision_error)}`:'';
+  const oErr=ed.ocr_error?`OCR: ${escHtml(ed.ocr_error)}`:'';
+  const failedBanner=isFailed?`
+    <div style="margin-bottom:10px;padding:10px 12px;border-radius:6px;background:#2d1a1a;border:1px solid #5a2020">
+      <div style="color:#f85149;font-weight:700;font-size:12px;margin-bottom:4px">❌ AI extraction failed — neither Ollama vision nor OCR could read the screenshot</div>
+      ${vErr?`<div style="font-size:10px;color:#8b949e;margin-top:2px">${vErr}</div>`:''}
+      ${oErr?`<div style="font-size:10px;color:#8b949e;margin-top:2px">${oErr}</div>`:''}
+      <div style="margin-top:8px;font-size:11px;color:#d29922">
+        <strong>Quick fix options:</strong><br>
+        1. Click <strong>🔧 Check Setup</strong> above to see what's missing<br>
+        2. Run <code style="background:#0a1628;padding:1px 4px;border-radius:3px;color:#58a6ff">ollama pull llava</code> in your terminal<br>
+        3. Or use <strong>Manual Override</strong> — type the UTR from your screenshot, select a Gmail channel, and click Verify
+      </div>
+    </div>`:'' ;
+  g('img-results-meta').textContent=`${mLabel} · ${ms}ms`;
+  g('img-result-body').innerHTML=`
+    <div style="border:1px solid ${isFailed?'#5a2020':'#21262d'};border-radius:6px;padding:14px;background:#0d1117">
+      ${failedBanner}
+      <div style="font-size:11px;color:#8b949e;margin-bottom:8px">Extracted by: <strong style="color:${isFailed?'#f85149':'#58a6ff'}">${escHtml(mLabel)}</strong>
+        &nbsp;·&nbsp; <code style="font-size:10px">${escHtml(d.parse_id||'')}</code></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        ${noEx?'<span class="sb" style="background:#2d1a1a;color:#f85149;border:1px solid #5a2020">No payment data extracted</span>':`${amtB}${refB}${bankB}${stB}${tsB}`}
+      </div>
+      <details><summary style="font-size:11px;color:#58a6ff;cursor:pointer">▶ Full JSON</summary>
+        <pre style="font-size:10px;color:#3fb950;margin:6px 0 0;white-space:pre-wrap;background:#0a1628;padding:8px;border-radius:4px;border:1px solid #1f3a5f">${escHtml(JSON.stringify({amount:d.extracted_amount,upi_ref:d.extracted_upi_ref,bank:d.extracted_bank,timestamp:d.extracted_timestamp,status:d.extracted_status},null,2))}</pre>
+      </details>
+    </div>`;
+  g('img-reconcile-wrap').style.display=noEx?'none':'';
+  g('img-results-wrap').style.display='';
+  // If extraction failed, scroll up to highlight manual override fields
+  if(isFailed){
+    g('img-manual-utr').style.borderColor='#d29922';
+    g('img-manual-amount').style.borderColor='#d29922';
+    g('img-manual-utr').focus();
+  }
+}
+
+function renderVerifyResult(d,ms){
+  const sc=d.screenshot||{};const em=d.email||{};const vr=d.verification||{};
+  const cfg=_verdictCfg[vr.verdict]||_verdictCfg.PENDING;
+  const mLabel=_methodLabel[sc.parse_method]||sc.parse_method||'unknown';
+
+  const amtB=sc.amount!=null?`<span class="sb" style="background:#1a2e1a;color:#3fb950;border:1px solid #2d5a27;font-size:12px;padding:3px 8px">₹ ${Number(sc.amount).toLocaleString('en-IN')}</span>`:'';
+  const refB=sc.upi_ref?`<span class="sb" style="background:#162032;color:#58a6ff;border:1px solid #1f3a5f">UPI: ${escHtml(sc.upi_ref)}</span>`:'';
+  const bankB=sc.bank?`<span class="sb" style="background:#21262d;color:#e6edf3;border:1px solid #30363d">${escHtml(sc.bank)}</span>`:'';
+
+  const emailSection=em.found?`
+    <div style="margin-top:12px;border-top:1px solid #21262d;padding-top:10px">
+      <div style="font-size:11px;color:#8b949e;margin-bottom:6px">Bank notification email found in <strong>${escHtml(d.channel_name||'Gmail')}</strong></div>
+      <div style="font-size:11px;color:#e6edf3"><strong>From:</strong> ${escHtml(em.from||'—')}</div>
+      <div style="font-size:12px;font-weight:600;color:#e6edf3;margin:2px 0">${escHtml(em.subject||'(no subject)')}</div>
+      <div style="font-size:10px;color:#8b949e;margin-bottom:8px">${escHtml(em.date||'')}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${em.amount!=null?`<span class="sb" style="background:#1a2e1a;color:#3fb950;border:1px solid #2d5a27">Bank: ₹ ${Number(em.amount).toLocaleString('en-IN')}</span>`:''}
+        ${em.upi_ref?`<span class="sb" style="background:#162032;color:#58a6ff;border:1px solid #1f3a5f">UPI: ${escHtml(em.upi_ref)}</span>`:''}
+        ${em.status?`<span class="sb" style="background:#21262d;color:#3fb950;border:1px solid #30363d">${em.status}</span>`:''}
+      </div>
+      <details style="margin-top:8px"><summary style="font-size:11px;color:#58a6ff;cursor:pointer">▶ Email body preview</summary>
+        <pre style="font-size:10px;color:#8b949e;margin:6px 0 0;white-space:pre-wrap;background:#161b22;padding:8px;border-radius:4px;max-height:160px;overflow:auto">${escHtml(em.body_preview||'')}</pre>
+      </details>
+    </div>`
+  :`<div style="margin-top:10px;font-size:11px;color:#8b949e">📭 No bank email found in Gmail matching "${escHtml(em.search_term||'')}" in the last ${g('img-search-days').value} day(s).</div>`;
+
+  let reconcileNote='';
+  if(d.reconcile){
+    reconcileNote=`<div class="inline-alert a-ok" style="margin-top:12px;font-size:11px">
+      ⚡ Auto-reconciled: Transaction <strong>${escHtml(d.reconcile.transaction_id)}</strong> → <strong>${d.reconcile.new_status}</strong>
+    </div>`;
+  }
+
+  g('img-results-meta').textContent=`${mLabel} · Gmail searched · ${ms}ms`;
+  g('img-result-body').innerHTML=`
+    <div style="border:1px solid ${cfg.border};border-radius:6px;padding:14px;background:#0d1117">
+      <!-- Verdict banner -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:10px 12px;border-radius:6px;background:${cfg.bg};border:1px solid ${cfg.border}">
+        <span style="font-size:20px">${cfg.icon}</span>
+        <div>
+          <div style="font-size:13px;font-weight:700;color:${cfg.color}">${vr.verdict.replace(/_/g,' ')}</div>
+          <div style="font-size:11px;color:${cfg.color};opacity:.8;margin-top:2px">${escHtml(vr.message||'')}</div>
+        </div>
+        <span class="sb" style="margin-left:auto;background:#21262d;color:#8b949e;border:1px solid #30363d">${vr.confidence} confidence</span>
+      </div>
+
+      <!-- Screenshot extraction -->
+      <div style="font-size:11px;color:#8b949e;margin-bottom:6px">Screenshot extracted by <strong style="color:#58a6ff">${escHtml(mLabel)}</strong></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px">${amtB}${refB}${bankB}</div>
+
+      ${emailSection}
+      ${reconcileNote}
+    </div>`;
+
+  // Show manual reconcile only if not auto-reconciled and something was found
+  const needManual=!d.reconcile&&(sc.amount!=null||sc.upi_ref);
+  g('img-reconcile-wrap').style.display=needManual?'':'none';
+  g('img-results-wrap').style.display='';
+}
+
+async function reconcileFromImage(){
+  if(!_imgParseId)return showAlert('img-reconcile-alert','a-err','No parse result available');
+  const txnId=v('img-manual-txn-id');
+  if(!txnId)return showAlert('img-reconcile-alert','a-err','Enter a Transaction ID');
+  const r=await api('PUT',`/reconcile/${txnId}`,{parse_id:_imgParseId});
+  if(r.ok){showAlert('img-reconcile-alert','a-ok',`✓ ${r.data.message||'Reconciled'} · status: ${r.data.status}`);}
+  else showAlert('img-reconcile-alert','a-err',r.data.detail||JSON.stringify(r.data));
+}
+
+/* ════ INIT ════════════════════════════════════════════════ */
+document.querySelectorAll('.tab-btn').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));
+initChips();
+initPhChips();
+connectSSE();
+
+// Check ?schema= URL param — load schema from external app
+window.addEventListener('load',()=>{
+  const p=new URLSearchParams(window.location.search);
+  const su=p.get('schema');
+  if(su){
+    g('schema-url-input').value=su;
+    if(window._jfLoaded) loadSchemaUrl();
+    else document.addEventListener('jf-ready',loadSchemaUrl,{once:true});
+  }
+  // Pre-select template from ?template= param
+  const tpl=p.get('template');
+  if(tpl&&SCHEMAS[tpl.toUpperCase()]){
+    g('schema-tpl').value=tpl.toUpperCase();
+    if(window._jfLoaded) onTplChange();
+    else document.addEventListener('jf-ready',onTplChange,{once:true});
+  }
+});
+
+// Input listeners for live preview
+['p-ctx','p-amount','p-upi-vpa','p-upi-name','p-expiry','p-notify','p-idem','p-tags'].forEach(id=>{
+  const el=g(id);if(el)el.addEventListener('input',updatePreview);
+});
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════
+     MODULE SCRIPT — Vue 3 + JSONForms
+     Loads from esm.sh (all transitive deps resolved automatically).
+     Shares the same Vue instance as any importmap consumers.
+══════════════════════════════════════════════════════════════ -->
+<script type="module">
+import { createApp, ref, h, defineComponent } from 'vue';
+import { JsonForms, rendererProps, useJsonFormsControl } from '@jsonforms/vue';
+import { vanillaRenderers }  from '@jsonforms/vue-vanilla';
+
+try {
+
+/* ── UUID Generator Renderer ───────────────────────────────────
+   Activated by adding  "options": { "generateUuid": true }
+   to ANY Control element in the UI Schema.
+   Uses browser-native crypto.randomUUID() — no library needed.
+─────────────────────────────────────────────────────────────── */
+const UuidRenderer = defineComponent({
+  name: 'UuidRenderer',
+  props: { ...rendererProps() },
+  setup(props) {
+    const { control, handleChange } = useJsonFormsControl(props);
+
+    const generate = () => handleChange(control.value.path, crypto.randomUUID());
+    const onInput  = e  => handleChange(control.value.path, e.target.value || undefined);
+
+    // Refresh SVG icon
+    const RefreshIcon = () => h('svg', {
+      width:'13', height:'13', viewBox:'0 0 24 24',
+      fill:'none', stroke:'currentColor',
+      'stroke-width':'2.2', 'stroke-linecap':'round', 'stroke-linejoin':'round',
+      style:'pointer-events:none;flex-shrink:0',
+    }, [
+      h('path', { d:'M21 2v6h-6' }),
+      h('path', { d:'M3 12a9 9 0 0 1 15-6.7L21 8' }),
+      h('path', { d:'M3 22v-6h6' }),
+      h('path', { d:'M21 12a9 9 0 0 1-15 6.7L3 16' }),
+    ]);
+
+    return () => {
+      const c = control.value;
+      return h('div', { class: 'control', style:'margin-bottom:10px' }, [
+        c.label
+          ? h('label', { style:'display:block;font-size:11px;color:#8b949e;margin-bottom:3px' }, [
+              c.label,
+              c.required ? h('span', { style:'color:#f85149;margin-left:2px' }, ' *') : null,
+            ])
+          : null,
+        h('div', { style:'display:flex;gap:6px;align-items:center' }, [
+          h('input', {
+            type: 'text',
+            value: c.data || '',
+            placeholder: 'Click ⟳ to generate UUID, or type manually',
+            class: c.errors ? 'invalid' : '',
+            style: 'flex:1;font-size:11px;font-family:monospace',
+            onInput,
+          }),
+          h('button', {
+            type: 'button',
+            title: 'Generate random UUID',
+            style: [
+              'display:inline-flex;align-items:center;gap:5px',
+              'padding:6px 10px;border-radius:6px',
+              'background:#162032;border:1px solid #1f3a5f',
+              'color:#58a6ff;cursor:pointer;font-size:11px;font-weight:500',
+              'font-family:inherit;flex-shrink:0;transition:all .15s',
+            ].join(';'),
+            onMouseenter(e) { e.currentTarget.style.background='#1f3a5f'; },
+            onMouseleave(e) { e.currentTarget.style.background='#162032'; },
+            onClick: generate,
+          }, [ h(RefreshIcon), 'Generate' ]),
+        ]),
+        c.description ? h('div', { class:'description' }, c.description) : null,
+        c.errors      ? h('div', { class:'error-message' }, c.errors)     : null,
+      ]);
+    };
+  },
+});
+
+// Tester: pure function — no @jsonforms/core imports required.
+// Returns rank 15 (beats vanilla rank ~2) when UI Schema opts in.
+const uuidTester = (uischema) =>
+  uischema?.type === 'Control' && uischema?.options?.generateUuid === true ? 15 : -1;
+
+const renderers = Object.freeze([
+  { tester: uuidTester, renderer: UuidRenderer },
+  ...vanillaRenderers,
+]);
+const jfSchema   = ref({});
+const jfUiSchema = ref(null);
+const jfData     = ref({});
+
+const app = createApp({
+  setup() {
+    const onChange = ({ data, errors }) => {
+      jfData.value     = data   || {};
+      window._jfData   = data   || {};
+      window._jfErrors = errors || [];
+      if (typeof window.updatePreview === 'function') window.updatePreview();
+    };
+
+    return () => {
+      if (!jfSchema.value || !jfSchema.value.type) {
+        return h('div', {
+          style: 'color:#8b949e;font-size:11px;padding:20px;text-align:center;line-height:2'
+        }, [
+          'Select a ', h('strong', 'Schema Template'), ' above to dynamically render payment fields.',
+          h('br'),
+          'Any application can supply its own ',
+          h('a', { href:'https://jsonforms.io', target:'_blank', style:'color:#58a6ff' }, 'JSON Schema'),
+          ' to extend this form without touching server code.'
+        ]);
+      }
+      return h(JsonForms, {
+        schema:   jfSchema.value,
+        uischema: jfUiSchema.value || undefined,
+        data:     jfData.value,
+        renderers,
+        onChange,
+      });
+    };
+  }
+});
+
+app.mount('#jf-root');
+
+/* ── Flatpickr enhancement via MutationObserver ───────────────
+   JSONForms vanilla renders <input type="date"> and
+   <input type="datetime-local"> natively.
+   We intercept those inputs via DOM observation and upgrade them
+   to flatpickr — no JSONForms renderer API needed.
+────────────────────────────────────────────────────────────── */
+const pad = n => String(n).padStart(2, '0');
+
+function enhanceDateInputs() {
+  const sel = '#jf-root input[type="date"]:not([data-fp]),' +
+              '#jf-root input[type="datetime-local"]:not([data-fp])';
+  document.querySelectorAll(sel).forEach(input => {
+    if (!window.flatpickr) return;
+    input.setAttribute('data-fp', '1');
+    const isDateTime = input.type === 'datetime-local';
+
+    const fp = window.flatpickr(input, {
+      enableTime:    isDateTime,
+      time_24hr:     true,
+      dateFormat:    isDateTime ? 'Y-m-dTH:i:S' : 'Y-m-d',
+      altInput:      true,
+      altFormat:     isDateTime ? 'D, d M Y  H:i' : 'D, d M Y',
+      disableMobile: true,
+      defaultDate:   input.value || null,
+
+      onChange([date]) {
+        if (!date) return;
+        const val = isDateTime
+          ? date.toISOString()
+          : `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}`;
+        // Write back and fire events so JSONForms Vue renderer picks up the change
+        input.value = val;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        input.dispatchEvent(new Event('input',  { bubbles: true }));
+        // Add clear button if not present
+        syncClearBtn(input, fp);
+      },
+
+      onClear() {
+        input.value = '';
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        removeClearBtn(input);
+      },
+    });
+
+    // Mirror JSONForms' `invalid` class (set on the hidden original) to the visible altInput
+    const classObs = new MutationObserver(() => {
+      if (fp.altInput) {
+        fp.altInput.classList.toggle('invalid', input.classList.contains('invalid'));
+      }
+    });
+    classObs.observe(input, { attributes: true, attributeFilter: ['class'] });
+  });
+}
+
+function syncClearBtn(input, fp) {
+  if (!fp.altInput || fp.altInput.parentNode?.querySelector('.fp-clear')) return;
+  const wrap = fp.altInput.parentNode;
+  if (!wrap) return;
+  // Ensure wrapper has relative positioning for the clear button
+  wrap.style.position = 'relative';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'fp-clear';
+  btn.title = 'Clear date';
+  btn.textContent = '✕';
+  btn.addEventListener('click', e => { e.stopPropagation(); fp.clear(); });
+  wrap.appendChild(btn);
+}
+
+function removeClearBtn(input) {
+  const fp = input._flatpickr;
+  if (fp?.altInput?.parentNode) {
+    fp.altInput.parentNode.querySelector('.fp-clear')?.remove();
+  }
+}
+
+// Run on every DOM change inside #jf-root
+const jfRoot = document.getElementById('jf-root');
+if (jfRoot) {
+  const obs = new MutationObserver(enhanceDateInputs);
+  obs.observe(jfRoot, { childList: true, subtree: true });
+  enhanceDateInputs(); // in case inputs already exist
+}
+
+// Expose setter for vanilla JS
+window._setJfSchema = (schema, uischema) => {
+  jfSchema.value   = schema   || {};
+  jfUiSchema.value = uischema || null;
+  jfData.value     = {};
+  window._jfData   = {};
+  window._jfErrors = [];
+  if (typeof window.updatePreview === 'function') window.updatePreview();
+};
+
+// Signal ready
+window._jfLoaded = true;
+const badge = document.getElementById('jf-status-badge');
+if (badge) { badge.textContent = 'JSONForms ✓'; badge.style.cssText = 'background:#1a2e1a;color:#3fb950;border-color:#2d5a27'; }
+document.dispatchEvent(new Event('jf-ready'));
+
+} catch (err) {
+  // Surface any module-level error in the badge so it's visible
+  const badge = document.getElementById('jf-status-badge');
+  if (badge) { badge.textContent = 'JSONForms ✗ ' + err.message; badge.style.cssText = 'background:#2d1a1a;color:#f85149;border-color:#5a2020;max-width:300px;white-space:normal'; }
+  console.error('[JSONForms module]', err);
+}
+</script>
+
+</body>
+</html>
