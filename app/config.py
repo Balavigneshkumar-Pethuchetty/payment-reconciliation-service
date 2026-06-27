@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     HYPERSWITCH_API_KEY: str = ""
 
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "llama3"
+    OLLAMA_MODEL: str = "llava"
     OLLAMA_VISION_MODEL: str = "llava"  # multimodal model for image parsing
 
     SECRET_KEY: str = "change-me"

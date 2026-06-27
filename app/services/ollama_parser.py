@@ -39,8 +39,8 @@ async def parse_with_ollama(raw_text: str, parse_hint: str | None = None) -> dic
             resp.raise_for_status()
             response_text = resp.json().get("response", "")
             return _extract_json(response_text)
-    except (httpx.ConnectError, httpx.TimeoutException):
-        # Fallback: regex-based extraction when Ollama is unavailable
+    except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError):
+        # Fallback: regex-based extraction when Ollama is unavailable or model missing
         return _regex_fallback(raw_text)
 
 
@@ -57,10 +57,22 @@ def _extract_json(text: str) -> dict:
 def _regex_fallback(text: str) -> dict:
     """Basic regex extraction — runs when Ollama is not available."""
     amount_match = re.search(r"(?:Rs\.?|INR|₹)\s*([\d,]+(?:\.\d{1,2})?)", text, re.IGNORECASE)
-    ref_match = re.search(r"(?:UPI|Ref(?:erence)?|Txn)[\s:]*([A-Z0-9]{10,20})", text, re.IGNORECASE)
+
+    # "UPI transaction reference no.: 530574598139" (HDFC InstaAlerts)
+    # "UTR: 586264656963" (PhonePe/bank receipts)
+    ref_match = (
+        re.search(r"reference\s+no\.?:?\s*(\d{10,20})", text, re.IGNORECASE) or
+        re.search(r"(?:UTR|Txn\s*(?:ID|No)?|UPI\s+Ref)[\s:]*([A-Z0-9]{10,20})", text, re.IGNORECASE)
+    )
+
     bank_match = re.search(r"(?:from|via|by)\s+([A-Z][a-z]+ ?(?:Bank|Pay|UPI)?)", text)
-    status = "credited" if re.search(r"credit(?:ed)?|received|added", text, re.IGNORECASE) else \
-             "debited" if re.search(r"debit(?:ed)?|sent|paid", text, re.IGNORECASE) else None
+
+    if re.search(r"credit(?:ed)?|received|added", text, re.IGNORECASE):
+        status: str | None = "credited"
+    elif re.search(r"debit(?:ed)?|sent|paid", text, re.IGNORECASE):
+        status = "debited"
+    else:
+        status = None
 
     amount_str = amount_match.group(1).replace(",", "") if amount_match else None
 

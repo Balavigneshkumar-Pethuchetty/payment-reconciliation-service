@@ -986,6 +986,7 @@ span.flatpickr-next-month:hover svg,span.flatpickr-prev-month:hover svg{fill:#e6
             placeholder="Examples:&#10;• This is a bank transaction alert from HDFC. Extract the credited/debited amount and UPI reference.&#10;• This email is about society maintenance fee payment. Look for amount paid and any transaction ID.&#10;• I expect a refund confirmation email from PhonePe or GPay. Extract the refund amount and status."></textarea>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+          <button class="btn btn-secondary btn-sm" onclick="fillHdfcHint()">HDFC InstaAlert</button>
           <button class="btn btn-secondary btn-sm" onclick="setTestHint('bank')">Bank alert</button>
           <button class="btn btn-secondary btn-sm" onclick="setTestHint('maintenance')">Maintenance fee</button>
           <button class="btn btn-secondary btn-sm" onclick="setTestHint('refund')">Refund</button>
@@ -2153,6 +2154,7 @@ async function loadTestChannels(){
 function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
 const _TEST_HINTS={
+  hdfc:'This is an HDFC Bank InstaAlerts email. Amount format is "Rs.20.00" (e.g. Rs. followed by decimal rupees). Extract: amount as float (Rs.20.00 → 20.0), UPI transaction reference number (labeled "UPI transaction reference no.:" — 10-15 digit number like 530574598139), recipient VPA (labeled "towards VPA", e.g. Q201291256@ybl), and status (debited from your account).',
   bank:'This is a bank transaction notification email (e.g. HDFC InstaAlerts, SBI, ICICI). Extract the credited/debited amount (look for "Rs." or "INR"), the UPI Reference Number (labeled "UPI Reference No." or "UTR" — a 10-15 digit number), the sender VPA if present, and the transaction status.',
   maintenance:'This email is about a society maintenance fee or utility bill payment. Look for the amount paid, any UPI Reference Number or transaction ID, payment date, and whether the payment was confirmed or failed.',
   refund:'This is a refund or reversal confirmation email. Extract the refunded amount, the original UPI Reference Number or UTR if present, the bank name, and the refund status (credited/success).',
@@ -2160,6 +2162,10 @@ const _TEST_HINTS={
 };
 function setTestHint(key){
   g('test-parse-hint').value=key?(_TEST_HINTS[key]||''):'';
+}
+function fillHdfcHint(){
+  g('test-from').value='hdfcbank';
+  g('test-parse-hint').value=_TEST_HINTS.hdfc;
 }
 
 function renderTestResults(data,ms){
