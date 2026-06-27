@@ -61,8 +61,7 @@ async def test_email_fetch(
     except RuntimeError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
-    results = []
-    for msg in messages:
+    async def _parse_one(msg: dict) -> dict:
         raw_text = (
             f"From: {msg['from']}\n"
             f"Subject: {msg['subject']}\n"
@@ -70,7 +69,7 @@ async def test_email_fetch(
             f"{msg['body']}"
         )
         ollama_result = await parse_with_ollama(raw_text, parse_hint=body.parse_hint)
-        results.append({
+        return {
             "from": msg["from"],
             "subject": msg["subject"],
             "date": msg["date"],
@@ -80,7 +79,12 @@ async def test_email_fetch(
             "attachment_names": msg["attachment_names"],
             "raw_text_sent": raw_text[:600],
             "ollama_result": ollama_result,
-        })
+        }
+
+    # Run all Ollama calls concurrently — Ollama processes them one at a time but
+    # the 30s httpx timeout fires for waiting emails and regex fallback kicks in.
+    # Total wall time ≈ 30s instead of N×30s.
+    results = list(await asyncio.gather(*[_parse_one(msg) for msg in messages]))
 
     return {
         "fetched": len(results),
