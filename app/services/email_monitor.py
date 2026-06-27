@@ -6,8 +6,11 @@ ParsedTransaction records, and broadcasts SSE events.
 """
 
 import asyncio
+import html as html_module
 import logging
+import re
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 
 from sqlalchemy import select
 
@@ -21,6 +24,39 @@ logger = logging.getLogger(__name__)
 
 # Seconds between each iteration of the outer monitor loop.
 _OUTER_INTERVAL = 30
+
+
+class _HTMLTextExtractor(HTMLParser):
+    """Strip HTML tags and return readable plain text."""
+    def __init__(self):
+        super().__init__()
+        self._parts: list[str] = []
+        self._skip = False
+
+    def handle_starttag(self, tag: str, attrs: list) -> None:
+        if tag in ("style", "script", "head"):
+            self._skip = True
+        elif tag in ("br", "p", "div", "tr", "li"):
+            self._parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in ("style", "script", "head"):
+            self._skip = False
+
+    def handle_data(self, data: str) -> None:
+        if not self._skip:
+            self._parts.append(data)
+
+
+def _html_to_text(html_content: str) -> str:
+    """Convert HTML email body to plain text for Ollama parsing."""
+    extractor = _HTMLTextExtractor()
+    try:
+        extractor.feed(html_content)
+    except Exception:
+        return re.sub(r"<[^>]+>", " ", html_content)
+    text = html_module.unescape("".join(extractor._parts))
+    return re.sub(r"[ \t]+", " ", re.sub(r"\n{3,}", "\n\n", text)).strip()
 
 
 def _imap_fetch(credentials: dict, filter_rules: dict) -> list[dict]:
@@ -55,7 +91,8 @@ def _imap_fetch(credentials: dict, filter_rules: dict) -> list[dict]:
                 if subject_kw and not any(kw.lower() in subject.lower() for kw in subject_kw):
                     continue
                 # body keyword filter
-                body = msg.text or msg.html or ""
+                raw_body = msg.text or msg.html or ""
+                body = _html_to_text(raw_body) if raw_body.lstrip().startswith("<") else raw_body
                 if body_kw and not any(kw.lower() in body.lower() for kw in body_kw):
                     continue
                 # attachment filter
@@ -69,7 +106,7 @@ def _imap_fetch(credentials: dict, filter_rules: dict) -> list[dict]:
                     "from": msg.from_,
                     "subject": subject,
                     "date": msg.date_str,
-                    "body": body[:4000],  # truncate to keep LLM prompt sane
+                    "body": body[:4000],
                     "has_attachment": has_att,
                     "attachment_names": [a.filename for a in msg.attachments],
                 })
@@ -108,12 +145,13 @@ def _imap_fetch_test(
     messages: list[dict] = []
     try:
         with MailBox(host, port).login(username, password) as mailbox:
-            criteria = None if include_seen else AND(seen=False)
+            criteria = "ALL" if include_seen else AND(seen=False)
             for msg in mailbox.fetch(criteria, limit=fetch_limit, mark_seen=mark_seen, reverse=True):
                 if from_lower and from_lower not in msg.from_.lower():
                     continue
                 subject = msg.subject or ""
-                body = msg.text or msg.html or ""
+                raw_body = msg.text or msg.html or ""
+                body = _html_to_text(raw_body) if raw_body.lstrip().startswith("<") else raw_body
                 if phrase_lower and (
                     phrase_lower not in subject.lower() and phrase_lower not in body.lower()
                 ):
