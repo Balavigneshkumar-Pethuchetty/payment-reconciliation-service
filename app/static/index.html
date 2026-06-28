@@ -2577,12 +2577,16 @@ function renderVerifyResult(d,ms){
       ${d.reconcile.upi_ref_stored?`· UPI ref <code>${escHtml(d.reconcile.upi_ref_stored)}</code> stored`:''}
     </div>`;
   } else if(d.matched_intents&&d.matched_intents.length>0){
+    const scoreColor=s=>s>=70?'#3fb950':s>=40?'#d29922':'#f85149';
     const rows=d.matched_intents.map(i=>`
       <tr style="border-bottom:1px solid #21262d">
-        <td style="padding:5px 8px;font-family:monospace;color:#58a6ff">${escHtml(i.transaction_id)}</td>
+        <td style="padding:5px 8px;font-family:monospace;color:#58a6ff;font-size:10px">${escHtml(i.transaction_id)}</td>
         <td style="padding:5px 8px;color:#3fb950">₹${Number(i.amount).toLocaleString('en-IN')}</td>
-        <td style="padding:5px 8px;color:#8b949e">${escHtml(i.ctx_type)}</td>
-        <td style="padding:5px 8px;color:#8b949e">${escHtml(i.reference||'—')}</td>
+        <td style="padding:5px 8px;color:#8b949e;font-size:10px">${escHtml(i.ctx_type)}</td>
+        <td style="padding:5px 8px">
+          <span style="font-size:11px;font-weight:700;color:${scoreColor(i.match_score)}">${i.match_score}/100</span>
+          <div style="font-size:9px;color:#8b949e;margin-top:2px">${(i.match_signals||[]).join(' · ')}</div>
+        </td>
         <td style="padding:5px 8px">
           <button class="btn btn-secondary btn-sm" onclick="manualReconcile('${escHtml(i.transaction_id)}','${escHtml(d.email?.parse_id||'')}')">
             Reconcile
@@ -2591,14 +2595,14 @@ function renderVerifyResult(d,ms){
       </tr>`).join('');
     reconcileNote=`<div style="margin-top:12px;border-top:1px solid #21262d;padding-top:10px">
       <div style="font-size:11px;color:#d29922;margin-bottom:6px">
-        ⚠ Multiple PENDING transactions match ₹${Number(sc.amount).toLocaleString('en-IN')} — pick one to reconcile:
+        ⚠ No high-confidence auto-match — pick the correct transaction to reconcile:
       </div>
       <table style="width:100%;font-size:11px;border-collapse:collapse">
         <tr style="color:#8b949e;font-size:10px">
           <th style="text-align:left;padding:3px 8px">Transaction ID</th>
           <th style="text-align:left;padding:3px 8px">Amount</th>
           <th style="text-align:left;padding:3px 8px">Type</th>
-          <th style="text-align:left;padding:3px 8px">Reference</th>
+          <th style="text-align:left;padding:3px 8px">Match signals</th>
           <th></th>
         </tr>
         ${rows}

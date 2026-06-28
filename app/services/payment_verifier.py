@@ -14,7 +14,9 @@ Flow:
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from app.services.image_parser import parse_image_bytes
 from app.services.ollama_parser import parse_with_ollama
@@ -31,6 +33,8 @@ class EmailMatch:
     extracted_amount: float | None
     extracted_upi_ref: str | None
     extracted_status: str | None
+    extracted_payee_vpa: str | None = None   # "towards VPA Q201291256@ybl" in HDFC alerts
+    email_date_parsed: "datetime | None" = None
 
 
 @dataclass
@@ -185,6 +189,17 @@ async def verify_screenshot_against_email(
     )
     email_extracted = await parse_with_ollama(raw_text, email_hint)
 
+    # Extract payee VPA from email body — e.g. "towards VPA Q201291256@ybl"
+    payee_vpa = _extract_vpa(best["body"])
+
+    # Parse email date for recency scoring
+    email_dt: datetime | None = None
+    try:
+        from email.utils import parsedate_to_datetime
+        email_dt = parsedate_to_datetime(best["date"]).astimezone(timezone.utc)
+    except Exception:
+        pass
+
     match = EmailMatch(
         from_=best["from"],
         subject=best["subject"],
@@ -193,6 +208,8 @@ async def verify_screenshot_against_email(
         extracted_amount=email_extracted.get("amount"),
         extracted_upi_ref=email_extracted.get("upi_ref"),
         extracted_status=email_extracted.get("status"),
+        extracted_payee_vpa=payee_vpa,
+        email_date_parsed=email_dt,
     )
     result.email_found = True
     result.email_match = match
@@ -227,6 +244,20 @@ async def verify_screenshot_against_email(
         )
 
     return result
+
+
+def _extract_vpa(text: str) -> str | None:
+    """
+    Extract the payee VPA from a bank email body.
+    HDFC: "towards VPA Q201291256@ybl"
+    SBI:  "to VPA society@upi"
+    Generic: any UPI-style handle (word@word)
+    """
+    m = (
+        re.search(r"(?:towards|to)\s+VPA\s+([A-Za-z0-9._\-]+@[A-Za-z0-9]+)", text, re.IGNORECASE) or
+        re.search(r"VPA[:\s]+([A-Za-z0-9._\-]+@[A-Za-z0-9]+)", text, re.IGNORECASE)
+    )
+    return m.group(1) if m else None
 
 
 def _amount_search_str(amount: float | None) -> str:

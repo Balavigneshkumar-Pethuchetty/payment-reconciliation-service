@@ -292,11 +292,18 @@ async def verify_payment_screenshot(
         # Explicit txn_id takes priority
         target_txn_id = txn_id
         if not target_txn_id and result.screenshot_amount is not None:
-            # Auto-match by amount against PENDING intents
-            candidates = await find_matching_intents(result.screenshot_amount, db)
+            # Score-based match: amount + VPA + payer identity + recency
+            em = result.email_match
+            candidates = await find_matching_intents(
+                amount=result.screenshot_amount,
+                db=db,
+                payer_id=user.get("preferred_username") or user.get("sub"),
+                payee_vpa=em.extracted_payee_vpa if em else None,
+                payment_time=em.email_date_parsed if em else None,
+            )
             matched_intents = candidates
-            if len(candidates) == 1:
-                # Unambiguous — auto-reconcile
+            # Auto-reconcile only when the top candidate is high-confidence
+            if candidates and candidates[0]["auto_reconcile"]:
                 target_txn_id = candidates[0]["transaction_id"]
 
         if target_txn_id:
@@ -343,6 +350,7 @@ async def verify_payment_screenshot(
             "amount": result.email_match.extracted_amount if result.email_match else None,
             "upi_ref": result.email_match.extracted_upi_ref if result.email_match else None,
             "status": result.email_match.extracted_status if result.email_match else None,
+            "payee_vpa": result.email_match.extracted_payee_vpa if result.email_match else None,
             "search_term": result.search_term_used,
         },
         "verification": {
