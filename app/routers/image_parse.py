@@ -281,19 +281,34 @@ async def verify_payment_screenshot(
 
     screenshot_parse_id = str(screenshot_parsed.id)
 
-    # Auto-reconcile if requested and payment is CONFIRMED
+    # Reconcile: either against the caller-supplied txn_id, or auto-match by amount
     reconcile_result: dict | None = None
-    if txn_id and result.verdict == "CONFIRMED" and email_parse_id:
-        from app.services.reconciliation import reconcile_payment
+    matched_intents: list[dict] = []
+
+    if result.verdict == "CONFIRMED" and email_parse_id:
+        from app.services.reconciliation import find_matching_intents, reconcile_payment
         matched_by = user.get("preferred_username", "image-verify")
-        rec = await reconcile_payment(txn_id, email_parsed.id, matched_by, db)
-        if rec:
-            intent, _ = rec
-            reconcile_result = {
-                "transaction_id": intent.transaction_id,
-                "new_status": intent.status.value,
-                "message": "Auto-reconciled from verified screenshot",
-            }
+
+        # Explicit txn_id takes priority
+        target_txn_id = txn_id
+        if not target_txn_id and result.screenshot_amount is not None:
+            # Auto-match by amount against PENDING intents
+            candidates = await find_matching_intents(result.screenshot_amount, db)
+            matched_intents = candidates
+            if len(candidates) == 1:
+                # Unambiguous — auto-reconcile
+                target_txn_id = candidates[0]["transaction_id"]
+
+        if target_txn_id:
+            rec = await reconcile_payment(target_txn_id, email_parsed.id, matched_by, db)
+            if rec:
+                intent, _ = rec
+                reconcile_result = {
+                    "transaction_id": intent.transaction_id,
+                    "new_status": intent.status.value,
+                    "message": "Auto-reconciled" if not txn_id else "Reconciled",
+                    "upi_ref_stored": intent.processor_ref_id,
+                }
 
     await sse_bus.publish(
         "payment_verified",
@@ -336,5 +351,8 @@ async def verify_payment_screenshot(
             "message": result.message,
         },
         "reconcile": reconcile_result,
+        # Candidates when multiple PENDING intents match the amount —
+        # admin picks one and calls PUT /reconcile/{transaction_id}
+        "matched_intents": matched_intents if not reconcile_result else [],
         "channel_name": ch.name,
     }

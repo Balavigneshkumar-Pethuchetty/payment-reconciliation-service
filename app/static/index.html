@@ -2533,6 +2533,16 @@ function renderImgResult(d,ms){
   }
 }
 
+async function manualReconcile(txnId, parseId){
+  if(!parseId){alert('No email parse ID — re-run verify first.');return;}
+  try{
+    const r=await api('PUT',`/reconcile/${encodeURIComponent(txnId)}`,{parse_id:parseId});
+    showAlert('img-alert',`Reconciled: ${txnId} → ${r.status}`,'ok');
+    // refresh the verify result section to show updated state
+    document.querySelectorAll('[onclick^="manualReconcile"]').forEach(b=>b.disabled=true);
+  }catch(e){showAlert('img-alert',`Reconcile failed: ${e.message}`,'err');}
+}
+
 function renderVerifyResult(d,ms){
   const sc=d.screenshot||{};const em=d.email||{};const vr=d.verification||{};
   const cfg=_verdictCfg[vr.verdict]||_verdictCfg.PENDING;
@@ -2562,7 +2572,37 @@ function renderVerifyResult(d,ms){
   let reconcileNote='';
   if(d.reconcile){
     reconcileNote=`<div class="inline-alert a-ok" style="margin-top:12px;font-size:11px">
-      ⚡ Auto-reconciled: Transaction <strong>${escHtml(d.reconcile.transaction_id)}</strong> → <strong>${d.reconcile.new_status}</strong>
+      ⚡ ${d.reconcile.message}: Transaction <strong>${escHtml(d.reconcile.transaction_id)}</strong>
+      → <strong>${d.reconcile.new_status}</strong>
+      ${d.reconcile.upi_ref_stored?`· UPI ref <code>${escHtml(d.reconcile.upi_ref_stored)}</code> stored`:''}
+    </div>`;
+  } else if(d.matched_intents&&d.matched_intents.length>0){
+    const rows=d.matched_intents.map(i=>`
+      <tr style="border-bottom:1px solid #21262d">
+        <td style="padding:5px 8px;font-family:monospace;color:#58a6ff">${escHtml(i.transaction_id)}</td>
+        <td style="padding:5px 8px;color:#3fb950">₹${Number(i.amount).toLocaleString('en-IN')}</td>
+        <td style="padding:5px 8px;color:#8b949e">${escHtml(i.ctx_type)}</td>
+        <td style="padding:5px 8px;color:#8b949e">${escHtml(i.reference||'—')}</td>
+        <td style="padding:5px 8px">
+          <button class="btn btn-secondary btn-sm" onclick="manualReconcile('${escHtml(i.transaction_id)}','${escHtml(d.email?.parse_id||'')}')">
+            Reconcile
+          </button>
+        </td>
+      </tr>`).join('');
+    reconcileNote=`<div style="margin-top:12px;border-top:1px solid #21262d;padding-top:10px">
+      <div style="font-size:11px;color:#d29922;margin-bottom:6px">
+        ⚠ Multiple PENDING transactions match ₹${Number(sc.amount).toLocaleString('en-IN')} — pick one to reconcile:
+      </div>
+      <table style="width:100%;font-size:11px;border-collapse:collapse">
+        <tr style="color:#8b949e;font-size:10px">
+          <th style="text-align:left;padding:3px 8px">Transaction ID</th>
+          <th style="text-align:left;padding:3px 8px">Amount</th>
+          <th style="text-align:left;padding:3px 8px">Type</th>
+          <th style="text-align:left;padding:3px 8px">Reference</th>
+          <th></th>
+        </tr>
+        ${rows}
+      </table>
     </div>`;
   }
 
