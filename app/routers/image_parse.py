@@ -321,11 +321,13 @@ async def verify_payment_screenshot(
         "payment_verified",
         {
             "screenshot_parse_id": screenshot_parse_id,
+            "transaction_id": reconcile_result["transaction_id"] if reconcile_result else txn_id,
             "verdict": result.verdict,
             "confidence": result.confidence,
             "amount": result.screenshot_amount,
             "upi_ref": result.screenshot_upi_ref,
             "email_found": result.email_found,
+            "reconcile_status": reconcile_result["new_status"] if reconcile_result else None,
             "channel": ch.name,
         },
     )

@@ -40,7 +40,6 @@ async def parse_with_ollama(raw_text: str, parse_hint: str | None = None) -> dic
             response_text = resp.json().get("response", "")
             return _extract_json(response_text)
     except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError):
-        # Fallback: regex-based extraction when Ollama is unavailable or model missing
         return _regex_fallback(raw_text)
 
 
@@ -82,6 +81,7 @@ def _regex_fallback(text: str) -> dict:
         "bank": bank_match.group(1).strip() if bank_match else None,
         "timestamp": None,
         "status": status,
+        "_source": "regex_fallback",
     }
 
 

@@ -18,6 +18,7 @@ from app.database import AsyncSessionLocal
 from app.models.channel import ChannelConfig, ChannelType
 from app.models.payment import ParsedTransaction, SourceType
 from app.services.ollama_parser import parse_with_ollama
+from app.services.reconciliation import find_matching_intents, reconcile_payment
 from app.services.sse_bus import sse_bus
 
 logger = logging.getLogger(__name__)
@@ -137,16 +138,36 @@ def _imap_fetch_test(
     username = credentials["username"]
     password = credentials["password"]
 
-    # Fetch more than limit so client-side filters have room to discard
-    fetch_limit = min(limit * 20, 200)
     phrase_lower = search_phrase.lower().strip() if search_phrase else None
     from_lower = from_filter.lower().strip() if from_filter else None
+
+    # Build IMAP server-side criteria so Gmail pre-filters before sending data.
+    # FROM and TEXT searches run on the server — much faster than fetching all emails.
+    conditions: list = []
+    if not include_seen:
+        conditions.append(AND(seen=False))
+    if from_filter:
+        conditions.append(AND(from_=from_filter))
+    if search_phrase:
+        conditions.append(AND(text=search_phrase))
+
+    if len(conditions) > 1:
+        from imap_tools import OR  # noqa: F401
+        criteria = AND(*conditions)
+    elif conditions:
+        criteria = conditions[0]
+    else:
+        criteria = "ALL"
+
+    # With server-side filtering we fetch exactly what we need; without it
+    # fetch extra so client-side fallback filtering has room to work.
+    fetch_limit = limit if (from_filter or search_phrase) else min(limit * 10, 100)
 
     messages: list[dict] = []
     try:
         with MailBox(host, port).login(username, password) as mailbox:
-            criteria = "ALL" if include_seen else AND(seen=False)
             for msg in mailbox.fetch(criteria, limit=fetch_limit, mark_seen=mark_seen, reverse=True):
+                # Client-side substring fallback (IMAP FROM search matches full address)
                 if from_lower and from_lower not in msg.from_.lower():
                     continue
                 subject = msg.subject or ""
@@ -222,20 +243,61 @@ async def _process_channel(
                 db.add(parsed)
                 await db.flush()
 
-                await sse_bus.publish(
-                    "email_received",
-                    {
-                        "parse_id": str(parsed.id),
-                        "channel": name,
-                        "from": msg["from"],
-                        "subject": msg["subject"],
-                        "extracted_amount": (
-                            float(parsed.extracted_amount) if parsed.extracted_amount else None
-                        ),
-                        "extracted_upi_ref": parsed.extracted_upi_ref,
-                        "extracted_status": parsed.extracted_status,
-                    },
-                )
+                event_payload: dict = {
+                    "parse_id": str(parsed.id),
+                    "channel": name,
+                    "from": msg["from"],
+                    "subject": msg["subject"],
+                    "extracted_amount": (
+                        float(parsed.extracted_amount) if parsed.extracted_amount else None
+                    ),
+                    "extracted_upi_ref": parsed.extracted_upi_ref,
+                    "extracted_status": parsed.extracted_status,
+                    "parse_source": extracted.get("_source", "ollama"),
+                }
+
+                # When Ollama is unavailable the regex fallback already extracted the UTR.
+                # Try to auto-reconcile against a pending PaymentIntent so the payment
+                # doesn't sit unmatched waiting for manual action.
+                if (
+                    extracted.get("_source") == "regex_fallback"
+                    and parsed.extracted_upi_ref
+                    and parsed.extracted_amount is not None
+                ):
+                    try:
+                        candidates = await find_matching_intents(
+                            amount=float(parsed.extracted_amount),
+                            db=db,
+                        )
+                        if candidates and candidates[0]["auto_reconcile"]:
+                            best = candidates[0]
+                            reconcile_result = await reconcile_payment(
+                                transaction_id=best["transaction_id"],
+                                parse_id=parsed.id,
+                                matched_by="email_monitor_fallback",
+                                db=db,
+                            )
+                            if reconcile_result:
+                                intent, _ = reconcile_result
+                                event_payload["auto_reconciled"] = True
+                                event_payload["matched_transaction_id"] = best["transaction_id"]
+                                event_payload["match_score"] = best["match_score"]
+                                event_payload["reconcile_status"] = intent.status.value
+                                logger.info(
+                                    "Auto-reconciled parse %s → transaction %s (score %d, UTR %s)",
+                                    parsed.id,
+                                    best["transaction_id"],
+                                    best["match_score"],
+                                    parsed.extracted_upi_ref,
+                                )
+                    except Exception:
+                        logger.exception(
+                            "Auto-reconcile failed for parse %s (UTR %s)",
+                            parsed.id,
+                            parsed.extracted_upi_ref,
+                        )
+
+                await sse_bus.publish("email_received", event_payload)
 
             await db.commit()
         except Exception:
