@@ -17,6 +17,68 @@ services:
       timeout: 3s
       retries: 5
 
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    # Uncomment for NVIDIA GPU support in WSL2 (requires nvidia-container-toolkit):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # One-shot container: pulls the model into the shared ollama_data volume on first run.
+  # Exits immediately after — Docker won't restart it (restart: "no").
+  ollama-init:
+    image: ollama/ollama:latest
+    restart: "no"
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["ollama", "pull", "llava"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - ollama_data:/root/.ollama
+
+  ollama-chat:
+    build: ./ollama_chat
+    restart: unless-stopped
+    ports:
+      - "8082:8082"
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: llava
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    restart: unless-stopped
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@payment.local
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      db:
+        condition: service_healthy
+
   api:
     build: .
     restart: unless-stopped
@@ -28,19 +90,20 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:password@db:5432/payment_reconciliation
       SERVICE_BASE_URL: https://pay.gm-global-techies-town.club
       CORS_ORIGINS: "https://gm-global-techies-town.club,https://www.gm-global-techies-town.club,https://pay.gm-global-techies-town.club,http://localhost:3000,http://localhost:5173,http://localhost:8080"
-      # Ollama runs natively on the host — reach it via host-gateway
-      OLLAMA_BASE_URL: http://host.docker.internal:11434
-      OLLAMA_MODEL: llava
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: llava           # text parsing (email / SMS)
+      OLLAMA_VISION_MODEL: llava    # image / screenshot parsing
       ADMIN_USERNAME: admin
       ADMIN_PASSWORD: admin123
-    extra_hosts:
-      # Maps host.docker.internal → host machine IP (Linux rootless Docker)
-      - "host.docker.internal:host-gateway"
     depends_on:
       db:
+        condition: service_healthy
+      ollama:
         condition: service_healthy
     volumes:
       - .:/app
 
 volumes:
   pg_data:
+  ollama_data:
+  pgadmin_data:
