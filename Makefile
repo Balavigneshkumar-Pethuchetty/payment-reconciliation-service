@@ -14,7 +14,7 @@ DIM   = \033[2m
 BLU   = \033[0;34m
 MGN   = \033[0;35m
 
-.PHONY: up build rebuild down restart logs logs-api logs-db \
+.PHONY: up build rebuild down restart logs logs-api logs-db logs-ollama logs-ollama-chat logs-pgadmin \
         ps status urls open shell-api shell-db \
         ollama-pull ollama-list migrate clean help
 
@@ -65,6 +65,15 @@ logs-api:
 logs-db:
 	@$(COMPOSE) logs -f db
 
+logs-ollama:
+	@$(COMPOSE) logs -f ollama
+
+logs-ollama-chat:
+	@$(COMPOSE) logs -f ollama-chat
+
+logs-pgadmin:
+	@$(COMPOSE) logs -f pgadmin
+
 # ── Container status ──────────────────────────────────────────────────────────
 ps:
 	@echo "$(BOLD)$(CYN)  Container status$(RESET)"
@@ -79,15 +88,15 @@ shell-api:
 shell-db:
 	@$(COMPOSE) exec db psql -U postgres -d payment_reconciliation
 
-# ── Ollama — runs natively on host (port 11434) ───────────────────────────────
+# ── Ollama — runs as Docker container (port 11434) ───────────────────────────
 ollama-pull:
-	@echo "$(BOLD)$(BLU)▶  Pulling llama3 into host Ollama…$(RESET)"
-	@ollama pull llama3
+	@echo "$(BOLD)$(BLU)▶  Pulling llava into containerised Ollama…$(RESET)"
+	@$(COMPOSE) exec ollama ollama pull llava
 	@echo "$(GRN)  Model ready.$(RESET)"
 
 ollama-list:
-	@echo "$(BOLD)$(BLU)  Models available on host Ollama:$(RESET)"
-	@ollama list
+	@echo "$(BOLD)$(BLU)  Models available in Ollama container:$(RESET)"
+	@$(COMPOSE) exec ollama ollama list
 
 # ── Apply DB trigger from migrations/init.sql (run once after first up) ───────
 migrate:
@@ -99,41 +108,45 @@ migrate:
 # ── Print all service URLs ────────────────────────────────────────────────────
 urls:
 	@echo ""
-	@echo "$(BOLD)$(CYN)╔══════════════════════════════════════════════════════════════╗$(RESET)"
-	@echo "$(BOLD)$(CYN)║         Payment Reconciliation Service — URLs                ║$(RESET)"
-	@echo "$(BOLD)$(CYN)╚══════════════════════════════════════════════════════════════╝$(RESET)"
+	@echo "$(BOLD)$(CYN)╔══════════════════════════════════════════════════════════════════╗$(RESET)"
+	@echo "$(BOLD)$(CYN)║          Payment Reconciliation Service — All URLs               ║$(RESET)"
+	@echo "$(BOLD)$(CYN)╚══════════════════════════════════════════════════════════════════╝$(RESET)"
 	@echo ""
-	@echo "  $(BOLD)API — Production$(RESET)  (via Cloudflare Tunnel)"
-	@echo "    $(MGN)https://pay.gm-global-techies-town.club$(RESET)              health check"
+	@echo "  $(BOLD)$(MGN)── Production (Cloudflare Tunnel) ───────────────────────────────────$(RESET)"
+	@echo "    $(MGN)https://pay.gm-global-techies-town.club$(RESET)              API health"
 	@echo "    $(MGN)https://pay.gm-global-techies-town.club/docs$(RESET)         Swagger UI"
+	@echo "    $(MGN)https://pay.gm-global-techies-town.club/redoc$(RESET)        ReDoc"
 	@echo "    $(MGN)https://pay.gm-global-techies-town.club/events/subscribe$(RESET)  SSE stream"
 	@echo ""
-	@echo "  $(BOLD)API — Local$(RESET)  (direct Docker port)"
-	@echo "    $(GRN)http://localhost:8001$(RESET)              health check"
-	@echo "    $(GRN)http://localhost:8001/docs$(RESET)         Swagger UI"
-	@echo "    $(GRN)http://localhost:8001/redoc$(RESET)        ReDoc"
+	@echo "  $(BOLD)$(GRN)── Local HTTP Services ──────────────────────────────────────────────$(RESET)"
+	@echo "    $(GRN)http://localhost:8001$(RESET)        $(BOLD)API$(RESET)         health / Swagger at /docs"
+	@echo "    $(GRN)http://localhost:8082$(RESET)        $(BOLD)Ollama Chat$(RESET) file-aware chat UI"
+	@echo "    $(GRN)http://localhost:5050$(RESET)        $(BOLD)pgAdmin$(RESET)     DB browser"
+	@echo "    $(GRN)http://localhost:11434$(RESET)       $(BOLD)Ollama$(RESET)      REST API"
+	@echo "    $(GRN)http://localhost:11434/api/tags$(RESET)  Ollama model list"
 	@echo ""
-	@echo "  $(BOLD)Ollama$(RESET)  $(DIM)(host native — not in Docker)$(RESET)"
-	@echo "    $(GRN)http://localhost:11434$(RESET)"
-	@echo "    $(DIM)  run 'make ollama-list' to see loaded models$(RESET)"
-	@echo "    $(DIM)  run 'make ollama-pull' to pull llama3 if missing$(RESET)"
+	@echo "  $(BOLD)$(CYN)── pgAdmin ───────────────────────────────────────────────────────────$(RESET)"
+	@echo "    $(BOLD)URL      :$(RESET) $(GRN)http://localhost:5050$(RESET)"
+	@echo "    $(BOLD)Login    :$(RESET) admin@payment.local  /  admin123"
+	@echo "    $(BOLD)― Add Server connection ―$(RESET)"
+	@echo "    $(BOLD)  Host     :$(RESET) db"
+	@echo "    $(BOLD)  Port     :$(RESET) 5432"
+	@echo "    $(BOLD)  Database :$(RESET) payment_reconciliation"
+	@echo "    $(BOLD)  Username :$(RESET) postgres"
+	@echo "    $(BOLD)  Password :$(RESET) password"
+	@echo "    $(DIM)  run 'make shell-db' for a psql prompt instead$(RESET)"
 	@echo ""
-	@echo "  $(BOLD)PostgreSQL$(RESET)"
-	@echo "    $(GRN)localhost:5432$(RESET)  →  db: payment_reconciliation  user: postgres"
-	@echo "    $(DIM)  run 'make shell-db' for a psql prompt$(RESET)"
+	@echo "  $(BOLD)$(CYN)── Keycloak (external) ──────────────────────────────────────────────$(RESET)"
+	@echo "    $(MGN)https://auth.gm-global-techies-town.club$(RESET)        login"
+	@echo "    $(MGN)https://auth.gm-global-techies-town.club/admin$(RESET)  admin console"
+	@echo "    realm: society-events   audience: payment-service"
 	@echo ""
-	@echo "  $(BOLD)Keycloak$(RESET)  $(DIM)(external — society-events realm)$(RESET)"
-	@echo "    $(MGN)https://auth.gm-global-techies-town.club$(RESET)             login"
-	@echo "    $(MGN)https://auth.gm-global-techies-town.club/admin$(RESET)       admin console"
-	@echo "    $(MGN)https://auth.gm-global-techies-town.club/realms/society-events/protocol/openid-connect/certs$(RESET)"
-	@echo "    $(DIM)                                                              JWKS public keys$(RESET)"
-	@echo ""
-	@echo "  $(BOLD)Quick test$(RESET)"
-	@echo "    $(DIM)curl https://pay.gm-global-techies-town.club/health$(RESET)"
-	@echo "    $(DIM)curl -X POST https://pay.gm-global-techies-town.club/createPayment$(RESET)"
-	@echo "    $(DIM)         -H 'Authorization: Bearer <token>'$(RESET)"
-	@echo "    $(DIM)         -H 'Content-Type: application/json'$(RESET)"
-	@echo "    $(DIM)         -d '{\"ctx_type\":\"BILLING\",\"amount\":500}'$(RESET)"
+	@echo "  $(BOLD)$(CYN)── Useful commands ──────────────────────────────────────────────────$(RESET)"
+	@echo "    $(DIM)make logs-ollama-chat$(RESET)   tail Ollama Chat logs"
+	@echo "    $(DIM)make logs-ollama$(RESET)        tail Ollama logs"
+	@echo "    $(DIM)make logs-pgadmin$(RESET)       tail pgAdmin logs"
+	@echo "    $(DIM)make ollama-list$(RESET)        list loaded models"
+	@echo "    $(DIM)make shell-db$(RESET)           psql prompt"
 	@echo ""
 
 # ── Open key URLs in default browser ─────────────────────────────────────────
@@ -147,7 +160,7 @@ open:
 clean:
 	@echo "$(BOLD)$(RED)▶  Removing containers AND volumes (full reset)…$(RESET)"
 	@$(COMPOSE) down -v 2>/dev/null || true
-	@echo "$(DIM)  pg_data volume removed.$(RESET)"
+	@echo "$(DIM)  pg_data, ollama_data, and pgadmin_data volumes removed.$(RESET)"
 
 # ── Auto-create .env from example if missing ──────────────────────────────────
 .env:
@@ -188,8 +201,11 @@ help:
 	@echo "  $(BOLD)make clean$(RESET)        Stop + wipe ALL volumes (full reset)"
 	@echo ""
 	@echo "  $(BOLD)make logs$(RESET)         Tail all container logs"
-	@echo "  $(BOLD)make logs-api$(RESET)     Tail API logs only"
-	@echo "  $(BOLD)make logs-db$(RESET)      Tail PostgreSQL logs"
+	@echo "  $(BOLD)make logs-api$(RESET)           Tail API logs"
+	@echo "  $(BOLD)make logs-db$(RESET)            Tail PostgreSQL logs"
+	@echo "  $(BOLD)make logs-ollama$(RESET)        Tail Ollama logs"
+	@echo "  $(BOLD)make logs-ollama-chat$(RESET)   Tail Ollama Chat logs"
+	@echo "  $(BOLD)make logs-pgadmin$(RESET)       Tail pgAdmin logs"
 	@echo ""
 	@echo "  $(BOLD)make ps$(RESET)           Show container status"
 	@echo "  $(BOLD)make urls$(RESET)         Print all service URLs"
@@ -197,7 +213,7 @@ help:
 	@echo ""
 	@echo "  $(BOLD)make shell-api$(RESET)    Shell into the API container"
 	@echo "  $(BOLD)make shell-db$(RESET)     psql prompt inside PostgreSQL"
-	@echo "  $(BOLD)make ollama-pull$(RESET)  Pull llama3 into host Ollama (if missing)"
-	@echo "  $(BOLD)make ollama-list$(RESET)  List models available in host Ollama"
+	@echo "  $(BOLD)make ollama-pull$(RESET)  Pull llava into Ollama container (if missing)"
+	@echo "  $(BOLD)make ollama-list$(RESET)  List models available in Ollama container"
 	@echo "  $(BOLD)make migrate$(RESET)      Apply migrations/init.sql to the DB"
 	@echo ""
