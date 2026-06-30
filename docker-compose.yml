@@ -3,16 +3,16 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: payment_reconciliation
+      POSTGRES_USER:     ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB:       ${POSTGRES_DB}
     # No host port binding — society_postgres already uses host:5432.
     # API container reaches this via service name "db:5432" inside the compose network.
     # Use "make shell-db" for a psql prompt.
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -46,7 +46,7 @@ services:
     restart: "no"
     environment:
       OLLAMA_HOST: http://ollama:11434
-    entrypoint: ["ollama", "pull", "llava"]
+    entrypoint: ["ollama", "pull", "${OLLAMA_MODEL}"]
     depends_on:
       ollama:
         condition: service_healthy
@@ -59,10 +59,23 @@ services:
     ports:
       - "8082:8082"
     environment:
-      OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_MODEL: llava
+      OLLAMA_BASE_URL: http://ollama:11434   # docker-internal — not from .env
+      OLLAMA_MODEL:    ${OLLAMA_MODEL}
+      # Conversations stored in the shared PostgreSQL instance
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      # Keycloak auth — uses same server as main API, different realm
+      KEYCLOAK_URL:          ${KEYCLOAK_URL}
+      KEYCLOAK_REALM:        ollama-chat
+      KEYCLOAK_CLIENT_ID:    ollama-chat-app
+      # Internal URL bypasses Cloudflare for server-side JWKS fetch
+      KEYCLOAK_INTERNAL_URL: http://host.containers.internal:8180
+      APP_PUBLIC_URL:        https://chat.gm-global-techies-town.club
+      # When set, Claude API is used instead of Ollama for all chat requests
+      ANTHROPIC_API_KEY:     ${ANTHROPIC_API_KEY:-}
     depends_on:
       ollama:
+        condition: service_healthy
+      db:
         condition: service_healthy
 
   pgadmin:
@@ -71,10 +84,11 @@ services:
     ports:
       - "5050:80"
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@payment.local
-      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_DEFAULT_EMAIL:    ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
     volumes:
       - pgadmin_data:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
     depends_on:
       db:
         condition: service_healthy
@@ -87,14 +101,29 @@ services:
     # Override Dockerfile CMD: only watch app/ so .venv pip installs don't trigger infinite restarts
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir app
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:password@db:5432/payment_reconciliation
-      SERVICE_BASE_URL: https://pay.gm-global-techies-town.club
-      CORS_ORIGINS: "https://gm-global-techies-town.club,https://www.gm-global-techies-town.club,https://pay.gm-global-techies-town.club,http://localhost:3000,http://localhost:5173,http://localhost:8080"
-      OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_MODEL: llava           # text parsing (email / SMS)
-      OLLAMA_VISION_MODEL: llava    # image / screenshot parsing
-      ADMIN_USERNAME: admin
-      ADMIN_PASSWORD: admin123
+      # DB — constructed from individual vars so the docker service name "db" is used, not localhost
+      DATABASE_URL:      postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      SERVICE_BASE_URL:  ${SERVICE_BASE_URL}
+      CORS_ORIGINS:      ${CORS_ORIGINS}
+      SECRET_KEY:        ${SECRET_KEY}
+      # Ollama — docker-internal address, not the .env OLLAMA_BASE_URL (which points to localhost)
+      OLLAMA_BASE_URL:      http://ollama:11434
+      OLLAMA_MODEL:         ${OLLAMA_MODEL}
+      OLLAMA_VISION_MODEL:  ${OLLAMA_VISION_MODEL}
+      # Admin
+      ADMIN_USERNAME: ${ADMIN_USERNAME}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      # UPI
+      UPI_VPA:          ${UPI_VPA}
+      UPI_DISPLAY_NAME: ${UPI_DISPLAY_NAME}
+      # Hyperswitch
+      HYPERSWITCH_BASE_URL: ${HYPERSWITCH_BASE_URL}
+      HYPERSWITCH_API_KEY:  ${HYPERSWITCH_API_KEY}
+      # Keycloak (optional)
+      KEYCLOAK_URL:             ${KEYCLOAK_URL}
+      KEYCLOAK_REALM:           ${KEYCLOAK_REALM}
+      KEYCLOAK_AUDIENCE:        ${KEYCLOAK_AUDIENCE}
+      KEYCLOAK_LOGIN_CLIENT_ID: ${KEYCLOAK_LOGIN_CLIENT_ID}
     depends_on:
       db:
         condition: service_healthy

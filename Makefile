@@ -16,7 +16,7 @@ MGN   = \033[0;35m
 
 .PHONY: up build rebuild down restart logs logs-api logs-db logs-ollama logs-ollama-chat logs-pgadmin \
         ps status urls open shell-api shell-db \
-        ollama-pull ollama-list migrate clean help
+        ollama-pull ollama-list migrate clean restart-tunnel help
 
 .DEFAULT_GOAL := help
 
@@ -117,17 +117,18 @@ urls:
 	@echo "    $(MGN)https://pay.gm-global-techies-town.club/docs$(RESET)         Swagger UI"
 	@echo "    $(MGN)https://pay.gm-global-techies-town.club/redoc$(RESET)        ReDoc"
 	@echo "    $(MGN)https://pay.gm-global-techies-town.club/events/subscribe$(RESET)  SSE stream"
+	@echo "    $(MGN)https://chat.gm-global-techies-town.club$(RESET)             Ollama Chat"
 	@echo ""
 	@echo "  $(BOLD)$(GRN)── Local HTTP Services ──────────────────────────────────────────────$(RESET)"
 	@echo "    $(GRN)http://localhost:8001$(RESET)        $(BOLD)API$(RESET)         health / Swagger at /docs"
-	@echo "    $(GRN)http://localhost:8082$(RESET)        $(BOLD)Ollama Chat$(RESET) file-aware chat UI"
+	@echo "    $(GRN)http://localhost:8082$(RESET)        $(BOLD)Ollama Chat$(RESET) https://chat.gm-global-techies-town.club"
 	@echo "    $(GRN)http://localhost:5050$(RESET)        $(BOLD)pgAdmin$(RESET)     DB browser"
 	@echo "    $(GRN)http://localhost:11434$(RESET)       $(BOLD)Ollama$(RESET)      REST API"
 	@echo "    $(GRN)http://localhost:11434/api/tags$(RESET)  Ollama model list"
 	@echo ""
 	@echo "  $(BOLD)$(CYN)── pgAdmin ───────────────────────────────────────────────────────────$(RESET)"
 	@echo "    $(BOLD)URL      :$(RESET) $(GRN)http://localhost:5050$(RESET)"
-	@echo "    $(BOLD)Login    :$(RESET) admin@payment.local  /  admin123"
+	@echo "    $(BOLD)Login    :$(RESET) admin@example.com  /  admin123"
 	@echo "    $(BOLD)― Add Server connection ―$(RESET)"
 	@echo "    $(BOLD)  Host     :$(RESET) db"
 	@echo "    $(BOLD)  Port     :$(RESET) 5432"
@@ -139,7 +140,8 @@ urls:
 	@echo "  $(BOLD)$(CYN)── Keycloak (external) ──────────────────────────────────────────────$(RESET)"
 	@echo "    $(MGN)https://auth.gm-global-techies-town.club$(RESET)        login"
 	@echo "    $(MGN)https://auth.gm-global-techies-town.club/admin$(RESET)  admin console"
-	@echo "    realm: society-events   audience: payment-service"
+	@echo "    realm: ollama-chat   client: ollama-chat-app"
+	@echo "    Google IDP redirect: https://auth.gm-global-techies-town.club/realms/ollama-chat/broker/google/endpoint"
 	@echo ""
 	@echo "  $(BOLD)$(CYN)── Useful commands ──────────────────────────────────────────────────$(RESET)"
 	@echo "    $(DIM)make logs-ollama-chat$(RESET)   tail Ollama Chat logs"
@@ -156,11 +158,17 @@ open:
 	  open http://localhost:8001/docs 2>/dev/null || \
 	  echo "  $(YLW)Visit: http://localhost:8001/docs$(RESET)"
 
+# ── Restart cloudflared (needed after adding a new tunnel route) ──────────────
+restart-tunnel:
+	@echo "$(BOLD)$(CYN)▶  Restarting cloudflared tunnel…$(RESET)"
+	@podman restart auth-service_cloudflared_1 2>/dev/null || docker restart auth-service_cloudflared_1
+	@echo "$(GRN)  Done. New routes are now active.$(RESET)"
+
 # ── Stop + wipe all volumes (full reset) ─────────────────────────────────────
 clean:
 	@echo "$(BOLD)$(RED)▶  Removing containers AND volumes (full reset)…$(RESET)"
 	@$(COMPOSE) down -v 2>/dev/null || true
-	@echo "$(DIM)  pg_data, ollama_data, and pgadmin_data volumes removed.$(RESET)"
+	@echo "$(DIM)  pg_data, ollama_data, pgadmin_data, and ollama_chat_data volumes removed.$(RESET)"
 
 # ── Auto-create .env from example if missing ──────────────────────────────────
 .env:

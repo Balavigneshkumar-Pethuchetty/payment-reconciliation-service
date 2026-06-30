@@ -48,6 +48,7 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        extra   = "ignore"   # silently skip vars not declared here (e.g. POSTGRES_*, PGADMIN_*)
 
 
 settings = Settings()
